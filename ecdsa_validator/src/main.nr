@@ -1,3 +1,5 @@
+mod merkle;
+
 use std::ecdsa_secp256k1::verify_signature;
 
 fn main(
