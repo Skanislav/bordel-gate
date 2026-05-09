@@ -15,13 +15,6 @@ const bb = await BarretenbergSync.initSingleton();
 
 // --- Field helpers ---
 
-// Convert a 32-byte big-endian Uint8Array into a 32-byte BE Fr buffer.
-// Validates it fits in BN254 field (16 bytes always fits trivially).
-function bytesToFrBuffer(bytes32) {
-  if (bytes32.length !== 32) throw new Error("expected 32 bytes");
-  return bytes32;
-}
-
 // High 16 bytes of a 32-byte array, zero-padded to 32 bytes (BE).
 function highHalfToFr(bytes32) {
   const out = new Uint8Array(32);
