@@ -22,6 +22,8 @@ export function getBordelNode(): Hex {
 
 export async function getCurrentBlock(): Promise<{ number: bigint; hash: Hex }> {
   const client = getReadClient()
-  const block = await client.getBlock({ blockTag: 'latest' })
-  return { number: block.number - 1n, hash: block.hash as Hex }
+  const latest = await client.getBlock({ blockTag: 'latest' })
+  // Use the parent block so the hash is final and observable from the next block onward.
+  const parent = await client.getBlock({ blockNumber: latest.number - 1n })
+  return { number: parent.number, hash: parent.hash as Hex }
 }

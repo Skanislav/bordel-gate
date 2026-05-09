@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { encodeAbiParameters, type Hex } from 'viem'
 import { computeChallenge } from '../_lib/challenge'
-import { encodeReceipt, signReceipt, type Receipt } from '../_lib/receipt'
+import { encodeResponse, signReceipt, type Receipt } from '../_lib/receipt'
 import { readRegistry } from '../_lib/registry'
 import { getSignerAccount } from '../_lib/sign-config'
 import {
@@ -84,8 +84,6 @@ export async function POST(request: Request): Promise<Response> {
   const signer = getSignerAccount()
   const signature = await signReceipt(signer, receipt)
 
-  return NextResponse.json({
-    receipt: encodeReceipt(receipt),
-    signature,
-  })
+  const data = encodeResponse(receipt, signature)
+  return NextResponse.json({ data })
 }

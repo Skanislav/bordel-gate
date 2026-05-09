@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { privateKeyToAccount } from 'viem/accounts'
-import { type Hex, keccak256, recoverAddress, hashMessage, decodeAbiParameters } from 'viem'
+import { type Hex, keccak256, recoverAddress, hashMessage, decodeAbiParameters, encodeAbiParameters } from 'viem'
 import { computeChallenge, DEFAULT_CHALLENGE_DOMAIN } from '../../_lib/challenge'
 import { RECEIPT_ABI } from '../../_lib/receipt'
 
@@ -57,21 +57,26 @@ describe('POST /api/gateway/lookup', () => {
   it('happy path → 200 with signed receipt', async () => {
     const res = await callPost(makeBody())
     expect(res.status).toBe(200)
-    const json = (await res.json()) as { receipt: Hex; signature: Hex }
-    expect(json.receipt).toMatch(/^0x[0-9a-f]+$/i)
-    expect(json.signature).toMatch(/^0x[0-9a-f]+$/i)
+    const json = (await res.json()) as { data: Hex }
+    expect(json.data).toMatch(/^0x[0-9a-f]+$/i)
+
+    // Decode (Receipt, bytes) tuple
+    const [decoded, signature] = decodeAbiParameters(
+      [RECEIPT_ABI[0], { type: 'bytes' }],
+      json.data,
+    ) as [
+      { node: Hex; value: Hex; signedRoot: Hex; blockNum: bigint; blockHash: Hex },
+      Hex,
+    ]
 
     // Verify signer
+    const receiptOnly = encodeAbiParameters(RECEIPT_ABI, [decoded])
     const recovered = await recoverAddress({
-      hash: hashMessage({ raw: keccak256(json.receipt) }),
-      signature: json.signature,
+      hash: hashMessage({ raw: keccak256(receiptOnly) }),
+      signature,
     })
     expect(recovered.toLowerCase()).toBe(ACCOUNT.address.toLowerCase())
 
-    // Verify decoded receipt fields
-    const [decoded] = decodeAbiParameters(RECEIPT_ABI, json.receipt) as [
-      { node: Hex; value: Hex; signedRoot: Hex; blockNum: bigint; blockHash: Hex },
-    ]
     expect(decoded.node).toBe(NODE)
     expect(decoded.signedRoot).toBe(ROOT)
     expect(decoded.blockNum).toBe(100n)

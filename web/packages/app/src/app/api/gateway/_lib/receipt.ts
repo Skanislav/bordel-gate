@@ -36,3 +36,12 @@ export async function signReceipt(account: LocalAccount, r: Receipt): Promise<He
   const digest = hashMessage({ raw: inner })
   return account.sign({ hash: digest })
 }
+
+const RESPONSE_ABI = [
+  RECEIPT_ABI[0],
+  { type: 'bytes' },
+] as const
+
+export function encodeResponse(receipt: Receipt, signature: Hex): Hex {
+  return encodeAbiParameters(RESPONSE_ABI, [receipt, signature])
+}
