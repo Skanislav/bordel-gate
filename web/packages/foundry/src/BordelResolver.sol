@@ -36,6 +36,13 @@ contract BordelResolver is IBordelResolver {
         emit AddrChanged(node, newAddress);
     }
 
+    function supportsInterface(bytes4 id) external pure returns (bool) {
+        return id == 0x01ffc9a7  // ERC-165
+            || id == bytes4(keccak256("addr(bytes32)"))
+            || id == bytes4(keccak256("text(bytes32,string)"))
+            || id == bytes4(keccak256("resolve(bytes,bytes)"));
+    }
+
     function resolve(bytes calldata, bytes calldata data) external view returns (bytes memory) {
         bytes4 selector = bytes4(data[0:4]);
         if (selector != bytes4(keccak256("addr(bytes32)"))) revert UnsupportedSelector(selector);

@@ -380,4 +380,27 @@ contract BordelResolverTest is Test {
         vm.expectRevert(IBordelResolver.BadSignature.selector);
         resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
     }
+
+    function test_supportsInterface_addr() public view {
+        // ENS addr resolver interface id (ENSIP-1)
+        assertTrue(resolver.supportsInterface(bytes4(keccak256("addr(bytes32)"))));
+    }
+
+    function test_supportsInterface_text() public view {
+        // ENS text resolver interface id
+        assertTrue(resolver.supportsInterface(bytes4(keccak256("text(bytes32,string)"))));
+    }
+
+    function test_supportsInterface_resolve() public view {
+        // ENSIP-10 wildcard interface id
+        assertTrue(resolver.supportsInterface(bytes4(keccak256("resolve(bytes,bytes)"))));
+    }
+
+    function test_supportsInterface_erc165() public view {
+        assertTrue(resolver.supportsInterface(0x01ffc9a7));
+    }
+
+    function test_supportsInterface_unknown_false() public view {
+        assertFalse(resolver.supportsInterface(0xffffffff));
+    }
 }
