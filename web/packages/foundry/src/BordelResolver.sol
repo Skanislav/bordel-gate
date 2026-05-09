@@ -2,18 +2,33 @@
 pragma solidity ^0.8.20;
 
 import {IENS} from "./interfaces/IENS.sol";
+import {INameWrapper} from "./interfaces/INameWrapper.sol";
 import {IBordelResolver} from "./interfaces/IBordelResolver.sol";
 
 contract BordelResolver is IBordelResolver {
     IENS public immutable ens;
+    INameWrapper public immutable nameWrapper;
     bytes32 public immutable bordelNode;
 
     mapping(bytes32 => mapping(string => string)) private _texts;
     mapping(bytes32 => address) private _addrs;
 
-    constructor(IENS _ens, bytes32 _bordelNode) {
+    constructor(IENS _ens, INameWrapper _nameWrapper, bytes32 _bordelNode) {
         ens = _ens;
+        nameWrapper = _nameWrapper;
         bordelNode = _bordelNode;
+    }
+
+    function _isAuthorized(bytes32 node) internal view returns (bool) {
+        address owner_ = ens.owner(node);
+        if (address(nameWrapper) != address(0) && owner_ == address(nameWrapper)) {
+            owner_ = nameWrapper.ownerOf(uint256(node));
+            if (owner_ == msg.sender) return true;
+            if (nameWrapper.isApprovedForAll(owner_, msg.sender)) return true;
+            return false;
+        }
+        if (owner_ == msg.sender) return true;
+        return ens.isApprovedForAll(owner_, msg.sender);
     }
 
     function text(bytes32 node, string calldata key) external view returns (string memory) {
@@ -21,7 +36,7 @@ contract BordelResolver is IBordelResolver {
     }
 
     function setText(bytes32 node, string calldata key, string calldata value) external {
-        if (ens.owner(node) != msg.sender) revert NotAuthorized();
+        if (!_isAuthorized(node)) revert NotAuthorized();
         _texts[node][key] = value;
         emit TextChanged(node, key, key, value);
     }
@@ -31,7 +46,7 @@ contract BordelResolver is IBordelResolver {
     }
 
     function setAddr(bytes32 node, address newAddress) external {
-        if (ens.owner(node) != msg.sender) revert NotAuthorized();
+        if (!_isAuthorized(node)) revert NotAuthorized();
         _addrs[node] = newAddress;
         emit AddrChanged(node, newAddress);
     }

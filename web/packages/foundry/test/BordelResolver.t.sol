@@ -4,11 +4,14 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {BordelResolver} from "../src/BordelResolver.sol";
 import {IBordelResolver} from "../src/interfaces/IBordelResolver.sol";
+import {INameWrapper} from "../src/interfaces/INameWrapper.sol";
 import {MockENS} from "./mocks/MockENS.sol";
+import {MockNameWrapper} from "./mocks/MockNameWrapper.sol";
 
 contract BordelResolverTest is Test {
     BordelResolver internal resolver;
     MockENS internal ens;
+    MockNameWrapper internal nameWrapper;
     bytes32 internal constant BORDEL_NODE = keccak256("bordel.eth.test.node");
     address internal owner = address(0xB0DE1);
     address internal stranger = address(0xDEAD);
@@ -18,8 +21,9 @@ contract BordelResolverTest is Test {
 
     function setUp() public {
         ens = new MockENS();
+        nameWrapper = new MockNameWrapper();
         ens.setOwner(BORDEL_NODE, owner);
-        resolver = new BordelResolver(ens, BORDEL_NODE);
+        resolver = new BordelResolver(ens, nameWrapper, BORDEL_NODE);
     }
 
     function test_setText_byOwner_updatesValue() public {
@@ -402,5 +406,71 @@ contract BordelResolverTest is Test {
 
     function test_supportsInterface_unknown_false() public view {
         assertFalse(resolver.supportsInterface(0xffffffff));
+    }
+
+    // ── NameWrapper / operator auth tests ─────────────────────────────────
+
+    address internal wrappedOwner = address(0xCAFE);
+    address internal operator = address(0xACCE5);
+
+    function test_setText_wrappedOwner_canWrite() public {
+        // Wrap the name: ENS owner becomes the NameWrapper, NameWrapper.ownerOf returns the human
+        ens.setOwner(BORDEL_NODE, address(nameWrapper));
+        nameWrapper.setOwner(uint256(BORDEL_NODE), wrappedOwner);
+
+        vm.prank(wrappedOwner);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x1234");
+        assertEq(resolver.text(BORDEL_NODE, "bordel.member-root"), "0x1234");
+    }
+
+    function test_setText_wrappedNonOwner_reverts() public {
+        ens.setOwner(BORDEL_NODE, address(nameWrapper));
+        nameWrapper.setOwner(uint256(BORDEL_NODE), wrappedOwner);
+
+        vm.prank(stranger);
+        vm.expectRevert(IBordelResolver.NotAuthorized.selector);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x1234");
+    }
+
+    function test_setText_ensOperator_canWrite() public {
+        // Raw-owner path with an ENS-level operator approval
+        vm.prank(owner);
+        ens.setApprovalForAll(operator, true);
+
+        vm.prank(operator);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x1234");
+        assertEq(resolver.text(BORDEL_NODE, "bordel.member-root"), "0x1234");
+    }
+
+    function test_setText_nameWrapperOperator_canWrite() public {
+        ens.setOwner(BORDEL_NODE, address(nameWrapper));
+        nameWrapper.setOwner(uint256(BORDEL_NODE), wrappedOwner);
+
+        vm.prank(wrappedOwner);
+        nameWrapper.setApprovalForAll(operator, true);
+
+        vm.prank(operator);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0xabcd");
+        assertEq(resolver.text(BORDEL_NODE, "bordel.member-root"), "0xabcd");
+    }
+
+    function test_setAddr_wrappedOwner_canWrite() public {
+        ens.setOwner(BORDEL_NODE, address(nameWrapper));
+        nameWrapper.setOwner(uint256(BORDEL_NODE), wrappedOwner);
+
+        vm.prank(wrappedOwner);
+        resolver.setAddr(BORDEL_NODE, address(0xBEEF));
+        assertEq(resolver.addr(BORDEL_NODE), address(0xBEEF));
+    }
+
+    function test_constructor_zeroNameWrapper_legacyPathStillWorks() public {
+        // Deploy a fresh resolver with no NameWrapper — raw-owner auth still functions
+        MockENS legacyEns = new MockENS();
+        legacyEns.setOwner(BORDEL_NODE, owner);
+        BordelResolver legacy = new BordelResolver(legacyEns, INameWrapper(address(0)), BORDEL_NODE);
+
+        vm.prank(owner);
+        legacy.setText(BORDEL_NODE, "bordel.member-root", "0xfeed");
+        assertEq(legacy.text(BORDEL_NODE, "bordel.member-root"), "0xfeed");
     }
 }
