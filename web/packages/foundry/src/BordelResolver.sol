@@ -15,4 +15,14 @@ contract BordelResolver is IBordelResolver {
         ens = _ens;
         bordelNode = _bordelNode;
     }
+
+    function text(bytes32 node, string calldata key) external view returns (string memory) {
+        return _texts[node][key];
+    }
+
+    function setText(bytes32 node, string calldata key, string calldata value) external {
+        if (ens.owner(node) != msg.sender) revert NotAuthorized();
+        _texts[node][key] = value;
+        emit TextChanged(node, key, key, value);
+    }
 }
