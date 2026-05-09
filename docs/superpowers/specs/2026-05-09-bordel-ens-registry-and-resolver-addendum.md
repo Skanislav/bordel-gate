@@ -58,7 +58,7 @@ function resolveWithProof(bytes calldata response, bytes calldata extraData) ext
 function supportsInterface(bytes4 id) external view returns (bool);
 ```
 
-`setText` is gated by ENS ownership of the node (standard ENS auth via `ENS.owner(node)`). For v1 only `BORDEL_NODE` has on-chain state — subnames are virtual.
+`setText` and `setAddr` are gated by an `_isAuthorized(node)` helper that mirrors the standard ENS PublicResolver pattern (see §3.5). For v1 only `BORDEL_NODE` has on-chain state — subnames are virtual.
 
 ### 3.2 Dispatch in `resolve(name, data)`
 
@@ -92,6 +92,21 @@ Unsupported selectors revert deterministically — no gateway roundtrip, no sile
 | `_gatewayUrls()` | `bordel.gateway-url.0..N` | empty array; caller reverts `NoGatewayConfigured` |
 
 `_gatewayUrls()` is two-pass (count, then populate) because Solidity needs the array length up front. Gas is irrelevant — `view` revert path only.
+
+### 3.5 Write authorization (`_isAuthorized`)
+
+`bordel.eth` may be held in raw form (ENS registry directly) or wrapped via the `NameWrapper` (ERC-1155). The resolver's constructor takes both `IENS` and `INameWrapper` (`address(0)` disables the wrapped path for legacy deployments). `_isAuthorized(node)` accepts a write from any of:
+
+| Caller | When |
+|--------|------|
+| Raw owner — `ens.owner(node) == msg.sender` | Name is unwrapped |
+| Wrapped owner — `nameWrapper.ownerOf(uint256(node)) == msg.sender` | Name is wrapped (ENS registry returns the NameWrapper as owner) |
+| ENS-level operator — `ens.isApprovedForAll(rawOwner, msg.sender)` | Name is unwrapped, raw owner has approved this address |
+| NameWrapper operator — `nameWrapper.isApprovedForAll(wrappedOwner, msg.sender)` | Name is wrapped, wrapped owner has approved this address |
+
+Crucially, when the name is wrapped, an ENS-level operator approval does **not** grant write access — the effective owner is no longer the ENS-level entity, and the wrapper is the source of truth. This matches PublicResolver semantics.
+
+**Operational note for admins:** the `/admin` page in the dApp uses EIP-5792 `wallet_sendCalls` to batch all `setText` writes into a single confirmation when the operator wallet is a Smart Account or 7702 EOA. EOAs without 5792 support fall back to one transaction per parameter.
 
 ### 3.4 `resolveWithProof(response, extraData)`
 
