@@ -43,8 +43,19 @@ contract BordelResolver is IBordelResolver {
         if (node == bordelNode) {
             return abi.encode(_addrs[node]);
         }
-        // Subname path filled in next task.
-        revert UnsupportedSelector(selector);
+        string[] memory urls = gatewayUrls();
+        if (urls.length == 0) revert NoGatewayConfigured();
+        revert OffchainLookup(
+            address(this),
+            urls,
+            data,
+            this.resolveWithProof.selector,
+            abi.encode(node)
+        );
+    }
+
+    function resolveWithProof(bytes calldata, bytes calldata) external view returns (bytes memory) {
+        revert("not implemented");
     }
 
     // ── Live-config constants ─────────────────────────────────────────────

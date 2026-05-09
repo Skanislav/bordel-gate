@@ -236,4 +236,35 @@ contract BordelResolverTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IBordelResolver.UnsupportedSelector.selector, TEXT_SEL));
         resolver.resolve(_dnsEncode("door.skas.bordel.eth"), data);
     }
+
+    bytes32 internal constant SUBNAME_NODE = keccak256("door.skas.bordel.eth.test.node");
+
+    function test_resolve_subname_revertsOffchainLookup() public {
+        _setUrl(0, "https://a.example/lookup");
+        _setUrl(1, "https://b.example/lookup");
+        bytes memory data = abi.encodeWithSelector(ADDR_SEL, SUBNAME_NODE);
+
+        // Encode the expected revert payload
+        string[] memory expectedUrls = new string[](2);
+        expectedUrls[0] = "https://a.example/lookup";
+        expectedUrls[1] = "https://b.example/lookup";
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IBordelResolver.OffchainLookup.selector,
+                address(resolver),
+                expectedUrls,
+                data,
+                BordelResolver.resolveWithProof.selector,
+                abi.encode(SUBNAME_NODE)
+            )
+        );
+        resolver.resolve(_dnsEncode("door.skas.bordel.eth"), data);
+    }
+
+    function test_resolve_subname_noUrls_revertsNoGatewayConfigured() public {
+        bytes memory data = abi.encodeWithSelector(ADDR_SEL, SUBNAME_NODE);
+        vm.expectRevert(IBordelResolver.NoGatewayConfigured.selector);
+        resolver.resolve(_dnsEncode("door.skas.bordel.eth"), data);
+    }
 }
