@@ -11,7 +11,7 @@ Bordel issues membership credentials. The existing system uses an ERC-721 NFT pl
 We want member identity and access checks to be expressible as ENS subnames, so that:
 
 - The bordel-gate contract can ask `resolver.addr(door.skas.bordel.eth)` and receive `skas`'s wallet address iff `skas` currently has access to the door.
-- Door / kitchen / gym permissions are individual capability subnames that can be added or restricted by config without touching contracts.
+- Door / kitchen / freezer permissions are individual capability subnames that can be added or restricted by config without touching contracts.
 - A revocation propagates instantly across all gates and capabilities.
 - The system survives gateway compromise: a stolen signer key cannot grant access for more than a short time window and cannot survive a single admin tx.
 
@@ -60,7 +60,7 @@ We want member identity and access checks to be expressible as ENS subnames, so 
 | `bordel.member-root` | `0x`-prefixed 32-byte hex string | Current Merkle root of member set. |
 | `bordel.gateway-signer` | `0x`-prefixed 20-byte hex string | EOA the resolver trusts for receipt sigs. |
 | `bordel.freshness-window` | decimal uint, base-10 string | Max blocks between `signed_blockNum` and `block.number`. |
-| `bordel.capabilities` | comma-separated lowercase tokens | Globally known capability names (`door,gym,kitchen`). Informational; gateway is still authoritative for who has what. |
+| `bordel.capabilities` | comma-separated lowercase tokens | Globally known capability names (`door,freezer,kitchen`). Informational; gateway is still authoritative for who has what. |
 
 Default `freshness-window` is `30` blocks. Hard upper bound is 256 (limit imposed by `blockhash()`).
 

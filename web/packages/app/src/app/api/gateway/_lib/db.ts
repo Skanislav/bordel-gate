@@ -12,7 +12,7 @@ const FIXTURES: Record<string, MemberRecord> = {
     name: 'skas.bordel.eth',
     leaf: '0x' + '00'.repeat(32) as Hex,
     address: '0x000000000000000000000000000000000000beef',
-    capabilities: ['door', 'gym', 'kitchen'],
+    capabilities: ['door', 'freezer', 'kitchen'],
   },
 }
 
