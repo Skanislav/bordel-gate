@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "./interfaces/IExtendedResolver.sol";
+import "./lib/EIP712Domain.sol";
 
 /// @title BordelResolver
 /// @notice ENS resolver for bordel.eth and *.bordel.eth.
@@ -157,12 +158,49 @@ contract BordelResolver {
         return new bytes(0);
     }
 
-    /// @dev Stub — filled in by P2.T5 (resolveWithProof).
-    function resolveWithProof(bytes calldata /*response*/, bytes calldata /*extraData*/)
+    function resolveWithProof(bytes calldata response, bytes calldata extraData)
         external
-        pure
+        view
         returns (bytes memory)
     {
-        revert("not implemented");
+        (bytes memory receipt, bytes memory sig) = abi.decode(response, (bytes, bytes));
+        (bytes32 node, bytes memory value, bytes32 signedRoot, uint64 blockNum, bytes32 bh) =
+            abi.decode(receipt, (bytes32, bytes, bytes32, uint64, bytes32));
+
+        // I3: receipt's node must match the originally queried node
+        (bytes32 expectedNode, ) = abi.decode(extraData, (bytes32, bytes));
+        if (node != expectedNode) revert NodeMismatch();
+
+        // I8: signature recovers to the configured signer
+        bytes32 d = EIP712Receipt.digest(address(this), node, value, signedRoot, blockNum, bh);
+        if (_recoverSigner(d, sig) != _signer()) revert InvalidSignature();
+
+        // I9: signed root must equal current onchain root
+        if (signedRoot != _root()) revert StaleRoot();
+
+        // I2: receipt must be within freshness window. Also rejects "future" blocks (blockNum >= block.number).
+        if (block.number <= blockNum) revert StaleBlock();
+        if (block.number - blockNum >= _freshness()) revert StaleBlock();
+
+        // I7: blockhash must match if the block is still in the 256-window
+        if (block.number - blockNum < 256) {
+            if (blockhash(blockNum) != bh) revert BlockHashMismatch();
+        }
+
+        return value;
+    }
+
+    function _recoverSigner(bytes32 d, bytes memory sig) internal pure returns (address) {
+        if (sig.length != 65) return address(0);
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(sig, 32))
+            s := mload(add(sig, 64))
+            v := byte(0, mload(add(sig, 96)))
+        }
+        if (v < 27) v += 27;
+        return ecrecover(d, v, r, s);
     }
 }
