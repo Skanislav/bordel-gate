@@ -54,8 +54,34 @@ contract BordelResolver is IBordelResolver {
         );
     }
 
-    function resolveWithProof(bytes calldata, bytes calldata) external view returns (bytes memory) {
-        revert("not implemented");
+    function resolveWithProof(bytes calldata response, bytes calldata extraData) external view returns (bytes memory) {
+        bytes32 expectedNode = abi.decode(extraData, (bytes32));
+        (Receipt memory r, bytes memory sig) = abi.decode(response, (Receipt, bytes));
+
+        bytes32 digest = keccak256(abi.encodePacked(
+            "\x19Ethereum Signed Message:\n32",
+            keccak256(abi.encode(r))
+        ));
+        if (_recover(digest, sig) != gatewaySigner()) revert BadSignature();
+        if (r.node != expectedNode) revert NodeMismatch();
+        if (r.signedRoot != memberRoot()) revert StaleRoot();
+        if (block.number - r.blockNum >= freshnessWindow()) revert StaleBlock();
+        if (blockhash(r.blockNum) != r.blockHash) revert ReorgedBlock();
+        return r.value;
+    }
+
+    function _recover(bytes32 digest, bytes memory sig) internal pure returns (address) {
+        if (sig.length != 65) return address(0);
+        bytes32 sigR;
+        bytes32 sigS;
+        uint8 v;
+        assembly {
+            sigR := mload(add(sig, 32))
+            sigS := mload(add(sig, 64))
+            v := byte(0, mload(add(sig, 96)))
+        }
+        if (v < 27) v += 27;
+        return ecrecover(digest, v, sigR, sigS);
     }
 
     // ── Live-config constants ─────────────────────────────────────────────

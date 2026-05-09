@@ -267,4 +267,117 @@ contract BordelResolverTest is Test {
         vm.expectRevert(IBordelResolver.NoGatewayConfigured.selector);
         resolver.resolve(_dnsEncode("door.skas.bordel.eth"), data);
     }
+
+    // ── resolveWithProof() tests ──────────────────────────────────────────
+
+    uint256 internal signerKey = 0xA11CE;
+    address internal signerAddr;
+
+    function _installSigner() internal {
+        signerAddr = vm.addr(signerKey);
+        _setSigner(signerAddr);
+    }
+
+    function _signReceipt(IBordelResolver.Receipt memory r) internal view returns (bytes memory) {
+        bytes32 digest = keccak256(abi.encodePacked(
+            "\x19Ethereum Signed Message:\n32",
+            keccak256(abi.encode(r))
+        ));
+        (uint8 v, bytes32 sigR, bytes32 sigS) = vm.sign(signerKey, digest);
+        return abi.encodePacked(sigR, sigS, v);
+    }
+
+    function _validReceipt(bytes32 node, address value) internal view returns (IBordelResolver.Receipt memory) {
+        return IBordelResolver.Receipt({
+            node: node,
+            value: abi.encode(value),
+            signedRoot: resolver.memberRoot(),
+            blockNum: uint64(block.number - 1),
+            blockHash: blockhash(block.number - 1)
+        });
+    }
+
+    function _seedRootAndSigner() internal {
+        _setRoot(bytes32(uint256(0xC0FFEE)));
+        _installSigner();
+    }
+
+    function test_resolveWithProof_happyPath_returnsValue() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        bytes memory result = resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
+        assertEq(abi.decode(result, (address)), address(0xBEEF));
+    }
+
+    function test_resolveWithProof_badSig_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        // Flip a byte
+        sig[0] = bytes1(uint8(sig[0]) ^ 0x01);
+        bytes memory response = abi.encode(r, sig);
+        vm.expectRevert(IBordelResolver.BadSignature.selector);
+        resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
+    }
+
+    function test_resolveWithProof_nodeMismatch_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        bytes32 differentNode = keccak256("other.bordel.eth.test");
+        vm.expectRevert(IBordelResolver.NodeMismatch.selector);
+        resolver.resolveWithProof(response, abi.encode(differentNode));
+    }
+
+    function test_resolveWithProof_staleRoot_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        // Rotate root after signing
+        _setRoot(bytes32(uint256(0xC0FFEE + 1)));
+        vm.expectRevert(IBordelResolver.StaleRoot.selector);
+        resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
+    }
+
+    function test_resolveWithProof_staleBlock_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        // Roll past freshness window (default 30)
+        vm.roll(200);
+        vm.expectRevert(IBordelResolver.StaleBlock.selector);
+        resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
+    }
+
+    function test_resolveWithProof_blockhashMismatch_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        r.blockHash = bytes32(uint256(0xDEADBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        vm.expectRevert(IBordelResolver.ReorgedBlock.selector);
+        resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
+    }
+
+    function test_resolveWithProof_signerRotated_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        _setSigner(address(0xFACE));
+        vm.expectRevert(IBordelResolver.BadSignature.selector);
+        resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
+    }
 }
