@@ -160,4 +160,56 @@ contract BordelResolverTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IBordelResolver.MalformedHex.selector, "member-root"));
         resolver.memberRoot();
     }
+
+    // ── gatewayUrls tests ─────────────────────────────────────────────────
+
+    function _setUrl(uint256 i, string memory url) internal {
+        vm.prank(owner);
+        resolver.setText(BORDEL_NODE, _urlKey(i), url);
+    }
+
+    function _urlKey(uint256 i) internal pure returns (string memory) {
+        return string.concat("bordel.gateway-url.", _u(i));
+    }
+
+    function _u(uint256 v) internal pure returns (string memory) {
+        if (v == 0) return "0";
+        uint256 t = v; uint256 d;
+        while (t != 0) { d++; t /= 10; }
+        bytes memory buf = new bytes(d);
+        while (v != 0) { d -= 1; buf[d] = bytes1(uint8(0x30 + v % 10)); v /= 10; }
+        return string(buf);
+    }
+
+    function test_gatewayUrls_emptyByDefault() public view {
+        string[] memory urls = resolver.gatewayUrls();
+        assertEq(urls.length, 0);
+    }
+
+    function test_gatewayUrls_singleEntry() public {
+        _setUrl(0, "https://a.example/lookup");
+        string[] memory urls = resolver.gatewayUrls();
+        assertEq(urls.length, 1);
+        assertEq(urls[0], "https://a.example/lookup");
+    }
+
+    function test_gatewayUrls_multipleContiguous() public {
+        _setUrl(0, "https://a.example/lookup");
+        _setUrl(1, "https://b.example/lookup");
+        _setUrl(2, "https://c.example/lookup");
+        string[] memory urls = resolver.gatewayUrls();
+        assertEq(urls.length, 3);
+        assertEq(urls[0], "https://a.example/lookup");
+        assertEq(urls[1], "https://b.example/lookup");
+        assertEq(urls[2], "https://c.example/lookup");
+    }
+
+    function test_gatewayUrls_gapStopsIteration() public {
+        _setUrl(0, "https://a.example/lookup");
+        // intentionally skip 1
+        _setUrl(2, "https://c.example/lookup");
+        string[] memory urls = resolver.gatewayUrls();
+        assertEq(urls.length, 1);
+        assertEq(urls[0], "https://a.example/lookup");
+    }
 }

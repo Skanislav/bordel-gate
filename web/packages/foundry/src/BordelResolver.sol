@@ -58,6 +58,31 @@ contract BordelResolver is IBordelResolver {
         return v > MAX_FRESHNESS ? MAX_FRESHNESS : v;
     }
 
+    function gatewayUrls() public view returns (string[] memory) {
+        uint256 count = 0;
+        while (bytes(_texts[bordelNode][_urlKey(count)]).length > 0) {
+            count++;
+        }
+        string[] memory urls = new string[](count);
+        for (uint256 i = 0; i < count; i++) {
+            urls[i] = _texts[bordelNode][_urlKey(i)];
+        }
+        return urls;
+    }
+
+    function _urlKey(uint256 i) internal pure returns (string memory) {
+        return string.concat("bordel.gateway-url.", _uintToStr(i));
+    }
+
+    function _uintToStr(uint256 v) internal pure returns (string memory) {
+        if (v == 0) return "0";
+        uint256 t = v; uint256 d;
+        while (t != 0) { d++; t /= 10; }
+        bytes memory buf = new bytes(d);
+        while (v != 0) { d -= 1; buf[d] = bytes1(uint8(0x30 + v % 10)); v /= 10; }
+        return string(buf);
+    }
+
     // ── Internal parsers ──────────────────────────────────────────────────
 
     function _parseBytes32(string memory s, string memory field) internal pure returns (bytes32) {
