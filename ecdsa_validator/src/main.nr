@@ -13,8 +13,8 @@ fn main(
     pub_key_y: [u8; 32],
     signature: [u8; 64],
     // private - Merkle inclusion proof against the published root
-    merkle_path: [[u8; 32]; 16],
-    merkle_indices: [bool; 16],
+    merkle_path: [[u8; 32]; TREE_DEPTH],
+    merkle_indices: [bool; TREE_DEPTH],
     // public
     challenge: pub [u8; 32],
     root: pub [u8; 32],
