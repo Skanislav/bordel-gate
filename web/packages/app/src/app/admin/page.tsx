@@ -68,7 +68,7 @@ function AdminInner({ resolver, bordelNode }: { resolver: `0x${string}`; bordelN
     return list
   }, [resolver, bordelNode])
 
-  const { data: readData, isLoading: readLoading, refetch } = useReadContracts({
+  const { data: readData, isLoading: readLoading, error: readError, refetch } = useReadContracts({
     contracts: reads,
     query: { enabled: true },
   })
@@ -119,12 +119,15 @@ function AdminInner({ resolver, bordelNode }: { resolver: `0x${string}`; bordelN
     query: { enabled: !!callsId },
   })
 
+  const batchInFlight = !!callsId && callsStatus?.status !== 'success' && callsStatus?.status !== 'failure'
+
   // Per-call fallback when wallet doesn't support sendCalls
   const { writeContract, data: writeHash, isPending: writePending, error: writeError } = useWriteContract()
   const { isLoading: writeMining, isSuccess: writeSuccess } = useWaitForTransactionReceipt({ hash: writeHash })
   const [fallbackQueue, setFallbackQueue] = useState<DirtyEntry[]>([])
 
   const onSave = () => {
+    if (batchInFlight) return
     if (dirty.length === 0) {
       Add('No changes to save', { type: 'info' })
       return
@@ -151,7 +154,7 @@ function AdminInner({ resolver, bordelNode }: { resolver: `0x${string}`; bordelN
     } else {
       Add(`Send failed: ${msg}`, { type: 'error' })
     }
-  }, [sendError])
+  }, [sendError, dirty, Add])
 
   // Drain the fallback queue one tx at a time
   useEffect(() => {
@@ -172,14 +175,14 @@ function AdminInner({ resolver, bordelNode }: { resolver: `0x${string}`; bordelN
       Add('Parameter updated', { type: 'success' })
       refetch()
     }
-  }, [writeSuccess])
+  }, [writeSuccess, Add, refetch])
 
   useEffect(() => {
     if (callsStatus?.status === 'success') {
       Add('Batch confirmed', { type: 'success' })
       refetch()
     }
-  }, [callsStatus?.status])
+  }, [callsStatus?.status, Add, refetch])
 
   return (
     <div className='flex-column p-6 max-w-3xl mx-auto'>
@@ -197,6 +200,8 @@ function AdminInner({ resolver, bordelNode }: { resolver: `0x${string}`; bordelN
       )}
 
       {readLoading && <div>Loading current values…</div>}
+
+      {readError && <div className='alert alert-error'>Failed to read on-chain values: {readError.message}</div>}
 
       {readData && (
         <div className='flex flex-col gap-3'>
@@ -230,7 +235,7 @@ function AdminInner({ resolver, bordelNode }: { resolver: `0x${string}`; bordelN
       <div className='flex items-center gap-3 mt-6'>
         <button
           className='btn btn-primary'
-          disabled={!isConnected || dirty.length === 0 || sendPending || writePending || writeMining}
+          disabled={!isConnected || dirty.length === 0 || sendPending || writePending || writeMining || batchInFlight}
           onClick={onSave}>
           {sendPending || writePending || writeMining
             ? 'Sending…'
