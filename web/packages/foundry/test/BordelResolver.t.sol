@@ -212,4 +212,28 @@ contract BordelResolverTest is Test {
         assertEq(urls.length, 1);
         assertEq(urls[0], "https://a.example/lookup");
     }
+
+    // ── resolve() tests ───────────────────────────────────────────────────
+
+    bytes4 internal constant ADDR_SEL = bytes4(keccak256("addr(bytes32)"));
+    bytes4 internal constant TEXT_SEL = bytes4(keccak256("text(bytes32,string)"));
+
+    function _dnsEncode(string memory) internal pure returns (bytes memory) {
+        // Test does not assert structure of `name`; resolver derives node from data.
+        return hex"";
+    }
+
+    function test_resolve_parent_addr_returnsDirectValue() public {
+        vm.prank(owner);
+        resolver.setAddr(BORDEL_NODE, address(0xBEEF));
+        bytes memory data = abi.encodeWithSelector(ADDR_SEL, BORDEL_NODE);
+        bytes memory result = resolver.resolve(_dnsEncode("bordel.eth"), data);
+        assertEq(abi.decode(result, (address)), address(0xBEEF));
+    }
+
+    function test_resolve_unsupportedSelector_reverts() public {
+        bytes memory data = abi.encodeWithSelector(TEXT_SEL, BORDEL_NODE, "bordel.tier");
+        vm.expectRevert(abi.encodeWithSelector(IBordelResolver.UnsupportedSelector.selector, TEXT_SEL));
+        resolver.resolve(_dnsEncode("door.skas.bordel.eth"), data);
+    }
 }

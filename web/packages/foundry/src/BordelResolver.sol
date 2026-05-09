@@ -36,6 +36,17 @@ contract BordelResolver is IBordelResolver {
         emit AddrChanged(node, newAddress);
     }
 
+    function resolve(bytes calldata, bytes calldata data) external view returns (bytes memory) {
+        bytes4 selector = bytes4(data[0:4]);
+        if (selector != bytes4(keccak256("addr(bytes32)"))) revert UnsupportedSelector(selector);
+        bytes32 node = abi.decode(data[4:], (bytes32));
+        if (node == bordelNode) {
+            return abi.encode(_addrs[node]);
+        }
+        // Subname path filled in next task.
+        revert UnsupportedSelector(selector);
+    }
+
     // ── Live-config constants ─────────────────────────────────────────────
 
     uint256 internal constant DEFAULT_FRESHNESS = 30;
