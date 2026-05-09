@@ -14,6 +14,7 @@ contract BordelResolverTest is Test {
     address internal stranger = address(0xDEAD);
 
     event TextChanged(bytes32 indexed node, string indexed indexedKey, string key, string value);
+    event AddrChanged(bytes32 indexed node, address newAddress);
 
     function setUp() public {
         ens = new MockENS();
@@ -42,5 +43,28 @@ contract BordelResolverTest is Test {
 
     function test_text_unsetReturnsEmpty() public view {
         assertEq(resolver.text(BORDEL_NODE, "nonexistent"), "");
+    }
+
+    function test_setAddr_byOwner() public {
+        vm.prank(owner);
+        resolver.setAddr(BORDEL_NODE, address(0xABCD));
+        assertEq(resolver.addr(BORDEL_NODE), address(0xABCD));
+    }
+
+    function test_setAddr_byStranger_reverts() public {
+        vm.prank(stranger);
+        vm.expectRevert(IBordelResolver.NotAuthorized.selector);
+        resolver.setAddr(BORDEL_NODE, address(0xABCD));
+    }
+
+    function test_setAddr_emitsEvent() public {
+        vm.prank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit AddrChanged(BORDEL_NODE, address(0xABCD));
+        resolver.setAddr(BORDEL_NODE, address(0xABCD));
+    }
+
+    function test_addr_unsetReturnsZero() public view {
+        assertEq(resolver.addr(BORDEL_NODE), address(0));
     }
 }

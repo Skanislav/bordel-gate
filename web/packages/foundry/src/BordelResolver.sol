@@ -25,4 +25,14 @@ contract BordelResolver is IBordelResolver {
         _texts[node][key] = value;
         emit TextChanged(node, key, key, value);
     }
+
+    function addr(bytes32 node) external view returns (address) {
+        return _addrs[node];
+    }
+
+    function setAddr(bytes32 node, address newAddress) external {
+        if (ens.owner(node) != msg.sender) revert NotAuthorized();
+        _addrs[node] = newAddress;
+        emit AddrChanged(node, newAddress);
+    }
 }
