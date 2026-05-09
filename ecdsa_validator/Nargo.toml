@@ -1,0 +1,6 @@
+[package]
+name = "ecdsa_validator"
+type = "bin"
+authors = [""]
+
+[dependencies]
