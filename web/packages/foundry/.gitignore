@@ -4,7 +4,8 @@ out/
 
 # Foundry-installed dependencies (pinned via foundry.lock).
 # Run `forge install` after a fresh clone to populate.
-lib/
+# Anchored to the foundry root so src/lib/ stays tracked.
+/lib/
 
 # Broadcast logs
 broadcast/
