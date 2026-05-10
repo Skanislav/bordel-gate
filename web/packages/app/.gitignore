@@ -51,3 +51,8 @@ contracts/artifacts
 # subgraph
 subgraph/node_modules
 subgraph/build
+
+# admin/membership state (server-side persistence in dev)
+/data/*
+!/data/.gitkeep
+certificates

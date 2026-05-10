@@ -29,4 +29,11 @@ export const EXAMPLE_ITEMS = [
     image: TokenIcon.src,
     url: '/examples/prove-signature',
   },
+  {
+    title: 'Admin · Enroll members',
+    description:
+      'Organizer surface: enroll members by pubkey (paste or tap a HaLo), watch the Merkle root rotate, and download per-member cards for the prove flow. Persisted server-side under data/.',
+    image: TokenIcon.src,
+    url: '/admin',
+  },
 ]

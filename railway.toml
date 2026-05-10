@@ -1,0 +1,47 @@
+# Railway deployment for the bordel-auth Next.js app.
+#
+# Service settings to set in the Railway UI / CLI:
+#
+#   Root Directory:        web
+#   Builder:               DOCKERFILE  (this file points at web/Dockerfile)
+#
+# Required env vars (Service → Variables):
+#
+#   NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID  Reown Cloud project ID. Without it,
+#                                         the page falls back to injected-only
+#                                         wallets and shows the missing-config
+#                                         banner. NEXT_PUBLIC_* vars are baked
+#                                         into the bundle at BUILD time, so
+#                                         this must be set before the deploy
+#                                         that should pick it up.
+#
+# Optional env vars:
+#
+#   MEMBERSHIP_CHAIN_IDS                  CSV of chainIds the server accepts
+#                                         enrollment signatures from. Defaults
+#                                         to "1" (mainnet); use "11155111" for
+#                                         Sepolia, or "1,11155111" for both.
+#   MEMBERSHIP_DB_PATH                    Where members.json lives. Default in
+#                                         the Dockerfile is /app/data/members.json.
+#                                         If you mount a Railway Volume, point
+#                                         this at <volumeMountPath>/members.json.
+#
+# Persistence (recommended for any non-throwaway deploy):
+#
+#   Add a Volume to the service in the Railway UI.
+#     Mount path: /app/data
+#     Size:       1 GiB is plenty (members.json is < 1 MB even at 65k members).
+#   The volume survives deploys; without it, every redeploy starts from an
+#   empty member list.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "web/Dockerfile"
+
+[deploy]
+# Health check the home page; the app is fully usable as soon as the Next
+# server is listening, no warm-up required.
+healthcheckPath = "/"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

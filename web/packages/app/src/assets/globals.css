@@ -1,2 +1,18 @@
 @import 'tailwindcss';
 @plugin "daisyui";
+
+:root {
+  --bordel-fg: #00ff66;
+  --bordel-fg-dim: #00aa44;
+  --bordel-fg-muted: #005522;
+  --bordel-bg: #000000;
+  --bordel-warn: #ffcc33;
+  --bordel-err: #ff3355;
+}
+
+html,
+body {
+  background: var(--bordel-bg);
+  color: var(--bordel-fg);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}

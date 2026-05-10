@@ -4,7 +4,9 @@
   "description": "This is a simple Noir demo that shows how to use dependencies in a Noir project.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "sync": "node scripts/sync_to_web.mjs",
+    "build": "nargo compile && node scripts/sync_to_web.mjs"
   },
   "keywords": [],
   "author": "",
