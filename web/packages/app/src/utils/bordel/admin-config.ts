@@ -6,6 +6,7 @@ const FIXED_KEYS = [
   'bordel.gateway-url',
   'bordel.freshness-window',
   'bordel.challenge-domain',
+  'bordel.challenge-version',
   'bordel.capabilities',
 ] as const
 

@@ -11,7 +11,7 @@ const ROOT = ('0x' + '11'.repeat(32)) as Hex
 const SKAS_LEAF = ('0x' + '00'.repeat(32)) as Hex
 
 vi.mock('../../_lib/registry', () => ({
-  readRegistry: vi.fn(async () => ({ memberRoot: ROOT, challengeDomain: '' })),
+  readRegistry: vi.fn(async () => ({ memberRoot: ROOT, challengeDomain: '', challengeVersion: '' })),
 }))
 
 vi.mock('../../_lib/sign-config', () => ({
@@ -31,6 +31,17 @@ vi.mock('../../_lib/chain-config', () => ({
 
 import { POST } from '../route'
 
+const DEFAULT_FIELDS = {
+  domain: DEFAULT_CHALLENGE_DOMAIN,
+  version: '1',
+  chainId: CHAIN_ID,
+  verifyingContract: RESOLVER,
+}
+
+function challenge(domain: string = DEFAULT_CHALLENGE_DOMAIN) {
+  return computeChallenge({ ...DEFAULT_FIELDS, domain }, { nonce: NONCE, node: NODE })
+}
+
 function makeBody(overrides: Record<string, unknown> = {}) {
   return {
     name: 'door.skas.bordel.eth',
@@ -40,7 +51,7 @@ function makeBody(overrides: Record<string, unknown> = {}) {
     nonce: NONCE,
     proof: '0xdeadbeef',
     publicInputs: {
-      challenge: computeChallenge({ domain: DEFAULT_CHALLENGE_DOMAIN, nonce: NONCE, node: NODE }),
+      challenge: challenge(),
       root: ROOT,
       leaf: SKAS_LEAF,
     },
@@ -103,7 +114,7 @@ describe('POST /api/gateway/lookup', () => {
   it('root mismatch → 403', async () => {
     const body = makeBody({
       publicInputs: {
-        challenge: computeChallenge({ domain: DEFAULT_CHALLENGE_DOMAIN, nonce: NONCE, node: NODE }),
+        challenge: challenge(),
         root: '0x' + 'ee'.repeat(32),
         leaf: SKAS_LEAF,
       },
@@ -116,7 +127,7 @@ describe('POST /api/gateway/lookup', () => {
     const body = makeBody({
       name: 'door.unknown.bordel.eth',
       publicInputs: {
-        challenge: computeChallenge({ domain: DEFAULT_CHALLENGE_DOMAIN, nonce: NONCE, node: NODE }),
+        challenge: challenge(),
         root: ROOT,
         leaf: '0x' + 'aa'.repeat(32),
       },
@@ -138,10 +149,11 @@ describe('POST /api/gateway/lookup', () => {
     vi.mocked(readRegistry).mockResolvedValueOnce({
       memberRoot: ROOT,
       challengeDomain: 'BORDEL_AUTH_V2',
+      challengeVersion: '1',
     })
     const body = makeBody({
       publicInputs: {
-        challenge: computeChallenge({ domain: 'BORDEL_AUTH_V2', nonce: NONCE, node: NODE }),
+        challenge: challenge('BORDEL_AUTH_V2'),
         root: ROOT,
         leaf: SKAS_LEAF,
       },

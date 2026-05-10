@@ -22,6 +22,7 @@ export interface RegistryReadInput {
 export interface RegistryView {
   memberRoot: Hex
   challengeDomain: string
+  challengeVersion: string
 }
 
 async function readText(input: RegistryReadInput, key: string): Promise<string> {
@@ -34,10 +35,15 @@ async function readText(input: RegistryReadInput, key: string): Promise<string> 
 }
 
 export async function readRegistry(input: RegistryReadInput): Promise<RegistryView> {
-  const [memberRoot, challengeDomain] = await Promise.all([
+  const [memberRoot, challengeDomain, challengeVersion] = await Promise.all([
     readText(input, 'bordel.member-root'),
     readText(input, 'bordel.challenge-domain'),
+    readText(input, 'bordel.challenge-version'),
   ])
   if (!memberRoot) throw new Error('registry: bordel.member-root is unset')
-  return { memberRoot: memberRoot as Hex, challengeDomain }
+  return {
+    memberRoot: memberRoot as Hex,
+    challengeDomain,
+    challengeVersion,
+  }
 }

@@ -22,6 +22,7 @@ export interface WalletRegistryInput {
 export interface WalletRegistry {
   memberRoot: Hex
   challengeDomain: string
+  challengeVersion: string
 }
 
 async function text(input: WalletRegistryInput, key: string): Promise<string> {
@@ -34,10 +35,15 @@ async function text(input: WalletRegistryInput, key: string): Promise<string> {
 }
 
 export async function readWalletRegistry(input: WalletRegistryInput): Promise<WalletRegistry> {
-  const [memberRoot, challengeDomain] = await Promise.all([
+  const [memberRoot, challengeDomain, challengeVersion] = await Promise.all([
     text(input, 'bordel.member-root'),
     text(input, 'bordel.challenge-domain'),
+    text(input, 'bordel.challenge-version'),
   ])
   if (!memberRoot) throw new Error('wallet-registry: bordel.member-root is unset')
-  return { memberRoot: memberRoot as Hex, challengeDomain }
+  return {
+    memberRoot: memberRoot as Hex,
+    challengeDomain,
+    challengeVersion,
+  }
 }

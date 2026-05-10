@@ -38,11 +38,15 @@ export async function POST(request: Request): Promise<Response> {
   })
 
   // 1. Challenge construction must match live config.
-  const expected = computeChallenge({
-    domain: registry.challengeDomain,
-    nonce: body.nonce,
-    node: body.node,
-  })
+  const expected = computeChallenge(
+    {
+      domain: registry.challengeDomain,
+      version: registry.challengeVersion,
+      chainId: getChainId(),
+      verifyingContract: getResolverAddress(),
+    },
+    { nonce: body.nonce, node: body.node },
+  )
   if (expected !== body.publicInputs.challenge) {
     return NextResponse.json({ error: 'challenge-mismatch' }, { status: 400 })
   }

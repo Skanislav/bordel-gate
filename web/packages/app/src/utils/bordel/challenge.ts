@@ -1,17 +1,27 @@
-import type { Hex } from 'viem'
 import {
-  computeChallenge,
   DEFAULT_CHALLENGE_DOMAIN,
+  DEFAULT_CHALLENGE_VERSION,
+  CHALLENGE_TYPES,
+  buildChallengeDomain,
+  buildChallengeTypedData,
+  computeChallenge,
+  type ChallengeDomainFields,
+  type ChallengeMessage,
 } from '@/app/api/gateway/_lib/challenge'
 
-export interface BuildChallengeInput {
-  domain: string
-  nonce: Hex
-  node: Hex
+export {
+  DEFAULT_CHALLENGE_DOMAIN,
+  DEFAULT_CHALLENGE_VERSION,
+  CHALLENGE_TYPES,
+  buildChallengeDomain,
+  buildChallengeTypedData,
+  computeChallenge,
 }
+export type { ChallengeDomainFields, ChallengeMessage }
 
-export function buildChallenge(input: BuildChallengeInput): Hex {
-  return computeChallenge(input)
+export function buildChallenge(
+  fields: ChallengeDomainFields,
+  message: ChallengeMessage,
+) {
+  return computeChallenge(fields, message)
 }
-
-export { DEFAULT_CHALLENGE_DOMAIN }
