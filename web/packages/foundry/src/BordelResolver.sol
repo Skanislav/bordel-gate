@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {IENS} from "./interfaces/IENS.sol";
 import {INameWrapper} from "./interfaces/INameWrapper.sol";
 import {IBordelResolver} from "./interfaces/IBordelResolver.sol";
+import {EIP712Receipt} from "./lib/EIP712Domain.sol";
 
 contract BordelResolver is IBordelResolver {
     IENS public immutable ens;
@@ -65,8 +66,10 @@ contract BordelResolver is IBordelResolver {
         if (node == bordelNode) {
             return abi.encode(_addrs[node]);
         }
-        string[] memory urls = gatewayUrls();
-        if (urls.length == 0) revert NoGatewayConfigured();
+        string memory url = _texts[bordelNode]["bordel.gateway-url"];
+        if (bytes(url).length == 0) revert NoGatewayConfigured();
+        string[] memory urls = new string[](1);
+        urls[0] = url;
         revert OffchainLookup(
             address(this),
             urls,
@@ -80,15 +83,20 @@ contract BordelResolver is IBordelResolver {
         bytes32 expectedNode = abi.decode(extraData, (bytes32));
         (Receipt memory r, bytes memory sig) = abi.decode(response, (Receipt, bytes));
 
-        bytes32 digest = keccak256(abi.encodePacked(
-            "\x19Ethereum Signed Message:\n32",
-            keccak256(abi.encode(r))
-        ));
-        if (_recover(digest, sig) != gatewaySigner()) revert BadSignature();
         if (r.node != expectedNode) revert NodeMismatch();
+
+        bytes32 d = EIP712Receipt.digest(address(this), r.node, r.value, r.signedRoot, r.blockNum, r.blockHash);
+        if (_recover(d, sig) != gatewaySigner()) revert BadSignature();
+
         if (r.signedRoot != memberRoot()) revert StaleRoot();
+
+        if (block.number <= r.blockNum) revert StaleBlock();
         if (block.number - r.blockNum >= freshnessWindow()) revert StaleBlock();
-        if (blockhash(r.blockNum) != r.blockHash) revert ReorgedBlock();
+
+        if (block.number - r.blockNum < 256) {
+            if (blockhash(r.blockNum) != r.blockHash) revert ReorgedBlock();
+        }
+
         return r.value;
     }
 
@@ -128,29 +136,8 @@ contract BordelResolver is IBordelResolver {
         return v > MAX_FRESHNESS ? MAX_FRESHNESS : v;
     }
 
-    function gatewayUrls() public view returns (string[] memory) {
-        uint256 count = 0;
-        while (bytes(_texts[bordelNode][_urlKey(count)]).length > 0) {
-            count++;
-        }
-        string[] memory urls = new string[](count);
-        for (uint256 i = 0; i < count; i++) {
-            urls[i] = _texts[bordelNode][_urlKey(i)];
-        }
-        return urls;
-    }
-
-    function _urlKey(uint256 i) internal pure returns (string memory) {
-        return string.concat("bordel.gateway-url.", _uintToStr(i));
-    }
-
-    function _uintToStr(uint256 v) internal pure returns (string memory) {
-        if (v == 0) return "0";
-        uint256 t = v; uint256 d;
-        while (t != 0) { d++; t /= 10; }
-        bytes memory buf = new bytes(d);
-        while (v != 0) { d -= 1; buf[d] = bytes1(uint8(0x30 + v % 10)); v /= 10; }
-        return string(buf);
+    function gatewayUrl() public view returns (string memory) {
+        return _texts[bordelNode]["bordel.gateway-url"];
     }
 
     // ── Internal parsers ──────────────────────────────────────────────────

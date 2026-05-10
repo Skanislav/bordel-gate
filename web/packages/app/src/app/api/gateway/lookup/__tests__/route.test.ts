@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { privateKeyToAccount } from 'viem/accounts'
-import { type Hex, keccak256, recoverAddress, hashMessage, decodeAbiParameters, encodeAbiParameters } from 'viem'
+import { type Hex, recoverAddress, hashTypedData, decodeAbiParameters } from 'viem'
 import { computeChallenge, DEFAULT_CHALLENGE_DOMAIN } from '../../_lib/challenge'
-import { RECEIPT_ABI } from '../../_lib/receipt'
+import { RECEIPT_ABI, RECEIPT_TYPES, buildDomain } from '../../_lib/receipt'
 
 const ACCOUNT = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d')
 const NODE = '0xabababababababababababababababababababababababababababababababab' as const
@@ -18,11 +18,15 @@ vi.mock('../../_lib/sign-config', () => ({
   getSignerAccount: () => ACCOUNT,
 }))
 
+const RESOLVER = '0x0000000000000000000000000000000000000001' as const
+const CHAIN_ID = 11155111
+
 vi.mock('../../_lib/chain-config', () => ({
   getReadClient: () => ({}),
-  getResolverAddress: () => '0x0000000000000000000000000000000000000001' as const,
+  getResolverAddress: () => RESOLVER,
   getBordelNode: () => NODE,
   getCurrentBlock: async () => ({ number: 100n, hash: ('0x' + '22'.repeat(32)) as Hex }),
+  getChainId: () => CHAIN_ID,
 }))
 
 import { POST } from '../route'
@@ -69,12 +73,14 @@ describe('POST /api/gateway/lookup', () => {
       Hex,
     ]
 
-    // Verify signer
-    const receiptOnly = encodeAbiParameters(RECEIPT_ABI, [decoded])
-    const recovered = await recoverAddress({
-      hash: hashMessage({ raw: keccak256(receiptOnly) }),
-      signature,
+    // Verify signer (EIP-712)
+    const digest = hashTypedData({
+      domain: buildDomain(CHAIN_ID, RESOLVER),
+      types: RECEIPT_TYPES,
+      primaryType: 'Receipt',
+      message: decoded,
     })
+    const recovered = await recoverAddress({ hash: digest, signature })
     expect(recovered.toLowerCase()).toBe(ACCOUNT.address.toLowerCase())
 
     expect(decoded.node).toBe(NODE)

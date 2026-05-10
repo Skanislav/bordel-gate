@@ -8,6 +8,10 @@ export function getReadClient(): PublicClient {
   })
 }
 
+export function getChainId(): number {
+  return sepolia.id
+}
+
 export function getResolverAddress(): Address {
   const a = process.env.BORDEL_RESOLVER
   if (!a) throw new Error('BORDEL_RESOLVER is not set')

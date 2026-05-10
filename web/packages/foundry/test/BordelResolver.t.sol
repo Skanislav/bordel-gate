@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {BordelResolver} from "../src/BordelResolver.sol";
 import {IBordelResolver} from "../src/interfaces/IBordelResolver.sol";
 import {INameWrapper} from "../src/interfaces/INameWrapper.sol";
+import {EIP712Receipt} from "../src/lib/EIP712Domain.sol";
 import {MockENS} from "./mocks/MockENS.sol";
 import {MockNameWrapper} from "./mocks/MockNameWrapper.sol";
 
@@ -89,6 +90,11 @@ contract BordelResolverTest is Test {
         resolver.setText(BORDEL_NODE, "bordel.freshness-window", s);
     }
 
+    function _setUrl(string memory url) internal {
+        vm.prank(owner);
+        resolver.setText(BORDEL_NODE, "bordel.gateway-url", url);
+    }
+
     function _toHex32(bytes32 v) internal pure returns (string memory) {
         bytes16 hexChars = "0123456789abcdef";
         bytes memory s = new bytes(66);
@@ -165,56 +171,15 @@ contract BordelResolverTest is Test {
         resolver.memberRoot();
     }
 
-    // ── gatewayUrls tests ─────────────────────────────────────────────────
+    // ── gatewayUrl tests ──────────────────────────────────────────────────
 
-    function _setUrl(uint256 i, string memory url) internal {
-        vm.prank(owner);
-        resolver.setText(BORDEL_NODE, _urlKey(i), url);
+    function test_gatewayUrl_emptyByDefault() public view {
+        assertEq(resolver.gatewayUrl(), "");
     }
 
-    function _urlKey(uint256 i) internal pure returns (string memory) {
-        return string.concat("bordel.gateway-url.", _u(i));
-    }
-
-    function _u(uint256 v) internal pure returns (string memory) {
-        if (v == 0) return "0";
-        uint256 t = v; uint256 d;
-        while (t != 0) { d++; t /= 10; }
-        bytes memory buf = new bytes(d);
-        while (v != 0) { d -= 1; buf[d] = bytes1(uint8(0x30 + v % 10)); v /= 10; }
-        return string(buf);
-    }
-
-    function test_gatewayUrls_emptyByDefault() public view {
-        string[] memory urls = resolver.gatewayUrls();
-        assertEq(urls.length, 0);
-    }
-
-    function test_gatewayUrls_singleEntry() public {
-        _setUrl(0, "https://a.example/lookup");
-        string[] memory urls = resolver.gatewayUrls();
-        assertEq(urls.length, 1);
-        assertEq(urls[0], "https://a.example/lookup");
-    }
-
-    function test_gatewayUrls_multipleContiguous() public {
-        _setUrl(0, "https://a.example/lookup");
-        _setUrl(1, "https://b.example/lookup");
-        _setUrl(2, "https://c.example/lookup");
-        string[] memory urls = resolver.gatewayUrls();
-        assertEq(urls.length, 3);
-        assertEq(urls[0], "https://a.example/lookup");
-        assertEq(urls[1], "https://b.example/lookup");
-        assertEq(urls[2], "https://c.example/lookup");
-    }
-
-    function test_gatewayUrls_gapStopsIteration() public {
-        _setUrl(0, "https://a.example/lookup");
-        // intentionally skip 1
-        _setUrl(2, "https://c.example/lookup");
-        string[] memory urls = resolver.gatewayUrls();
-        assertEq(urls.length, 1);
-        assertEq(urls[0], "https://a.example/lookup");
+    function test_gatewayUrl_setAndGet() public {
+        _setUrl("https://gateway.example/lookup");
+        assertEq(resolver.gatewayUrl(), "https://gateway.example/lookup");
     }
 
     // ── resolve() tests ───────────────────────────────────────────────────
@@ -244,14 +209,11 @@ contract BordelResolverTest is Test {
     bytes32 internal constant SUBNAME_NODE = keccak256("door.skas.bordel.eth.test.node");
 
     function test_resolve_subname_revertsOffchainLookup() public {
-        _setUrl(0, "https://a.example/lookup");
-        _setUrl(1, "https://b.example/lookup");
+        _setUrl("https://gateway.example/lookup");
         bytes memory data = abi.encodeWithSelector(ADDR_SEL, SUBNAME_NODE);
 
-        // Encode the expected revert payload
-        string[] memory expectedUrls = new string[](2);
-        expectedUrls[0] = "https://a.example/lookup";
-        expectedUrls[1] = "https://b.example/lookup";
+        string[] memory expectedUrls = new string[](1);
+        expectedUrls[0] = "https://gateway.example/lookup";
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -266,7 +228,7 @@ contract BordelResolverTest is Test {
         resolver.resolve(_dnsEncode("door.skas.bordel.eth"), data);
     }
 
-    function test_resolve_subname_noUrls_revertsNoGatewayConfigured() public {
+    function test_resolve_subname_noUrl_revertsNoGatewayConfigured() public {
         bytes memory data = abi.encodeWithSelector(ADDR_SEL, SUBNAME_NODE);
         vm.expectRevert(IBordelResolver.NoGatewayConfigured.selector);
         resolver.resolve(_dnsEncode("door.skas.bordel.eth"), data);
@@ -283,10 +245,14 @@ contract BordelResolverTest is Test {
     }
 
     function _signReceipt(IBordelResolver.Receipt memory r) internal view returns (bytes memory) {
-        bytes32 digest = keccak256(abi.encodePacked(
-            "\x19Ethereum Signed Message:\n32",
-            keccak256(abi.encode(r))
-        ));
+        bytes32 digest = EIP712Receipt.digest(
+            address(resolver),
+            r.node,
+            r.value,
+            r.signedRoot,
+            r.blockNum,
+            r.blockHash
+        );
         (uint8 v, bytes32 sigR, bytes32 sigS) = vm.sign(signerKey, digest);
         return abi.encodePacked(sigR, sigS, v);
     }
@@ -386,17 +352,14 @@ contract BordelResolverTest is Test {
     }
 
     function test_supportsInterface_addr() public view {
-        // ENS addr resolver interface id (ENSIP-1)
         assertTrue(resolver.supportsInterface(bytes4(keccak256("addr(bytes32)"))));
     }
 
     function test_supportsInterface_text() public view {
-        // ENS text resolver interface id
         assertTrue(resolver.supportsInterface(bytes4(keccak256("text(bytes32,string)"))));
     }
 
     function test_supportsInterface_resolve() public view {
-        // ENSIP-10 wildcard interface id
         assertTrue(resolver.supportsInterface(bytes4(keccak256("resolve(bytes,bytes)"))));
     }
 
@@ -414,7 +377,6 @@ contract BordelResolverTest is Test {
     address internal operator = address(0xACCE5);
 
     function test_setText_wrappedOwner_canWrite() public {
-        // Wrap the name: ENS owner becomes the NameWrapper, NameWrapper.ownerOf returns the human
         ens.setOwner(BORDEL_NODE, address(nameWrapper));
         nameWrapper.setOwner(uint256(BORDEL_NODE), wrappedOwner);
 
@@ -433,7 +395,6 @@ contract BordelResolverTest is Test {
     }
 
     function test_setText_ensOperator_canWrite() public {
-        // Raw-owner path with an ENS-level operator approval
         vm.prank(owner);
         ens.setApprovalForAll(operator, true);
 
@@ -464,7 +425,6 @@ contract BordelResolverTest is Test {
     }
 
     function test_constructor_zeroNameWrapper_legacyPathStillWorks() public {
-        // Deploy a fresh resolver with no NameWrapper — raw-owner auth still functions
         MockENS legacyEns = new MockENS();
         legacyEns.setOwner(BORDEL_NODE, owner);
         BordelResolver legacy = new BordelResolver(legacyEns, INameWrapper(address(0)), BORDEL_NODE);

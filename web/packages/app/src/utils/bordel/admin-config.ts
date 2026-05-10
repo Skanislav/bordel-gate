@@ -3,6 +3,7 @@ import type { Address, Hex } from 'viem'
 const FIXED_KEYS = [
   'bordel.member-root',
   'bordel.gateway-signer',
+  'bordel.gateway-url',
   'bordel.freshness-window',
   'bordel.challenge-domain',
   'bordel.capabilities',

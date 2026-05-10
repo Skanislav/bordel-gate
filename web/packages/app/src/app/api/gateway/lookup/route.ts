@@ -9,6 +9,7 @@ import {
   getResolverAddress,
   getBordelNode,
   getCurrentBlock,
+  getChainId,
 } from '../_lib/chain-config'
 import { lookupMember, capabilityOf } from '../_lib/db'
 import { verifyProof } from '../_lib/verify'
@@ -82,7 +83,10 @@ export async function POST(request: Request): Promise<Response> {
     blockHash: block.hash,
   }
   const signer = getSignerAccount()
-  const signature = await signReceipt(signer, receipt)
+  const signature = await signReceipt(signer, receipt, {
+    chainId: getChainId(),
+    verifyingContract: getResolverAddress(),
+  })
 
   const data = encodeResponse(receipt, signature)
   return NextResponse.json({ data })

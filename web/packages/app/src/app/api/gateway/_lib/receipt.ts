@@ -1,7 +1,6 @@
 import {
   encodeAbiParameters,
-  hashMessage,
-  keccak256,
+  type Address,
   type Hex,
   type LocalAccount,
 } from 'viem'
@@ -27,14 +26,45 @@ export const RECEIPT_ABI = [
   },
 ] as const
 
+export const RECEIPT_TYPES = {
+  Receipt: [
+    { name: 'node', type: 'bytes32' },
+    { name: 'value', type: 'bytes' },
+    { name: 'signedRoot', type: 'bytes32' },
+    { name: 'blockNum', type: 'uint64' },
+    { name: 'blockHash', type: 'bytes32' },
+  ],
+} as const
+
+export function buildDomain(chainId: number, verifyingContract: Address) {
+  return {
+    name: 'BordelGateway',
+    version: '1',
+    chainId,
+    verifyingContract,
+  } as const
+}
+
 export function encodeReceipt(r: Receipt): Hex {
   return encodeAbiParameters(RECEIPT_ABI, [r])
 }
 
-export async function signReceipt(account: LocalAccount, r: Receipt): Promise<Hex> {
-  const inner = keccak256(encodeReceipt(r))
-  const digest = hashMessage({ raw: inner })
-  return account.sign({ hash: digest })
+export interface SignContext {
+  chainId: number
+  verifyingContract: Address
+}
+
+export async function signReceipt(
+  account: LocalAccount,
+  r: Receipt,
+  ctx: SignContext,
+): Promise<Hex> {
+  return account.signTypedData({
+    domain: buildDomain(ctx.chainId, ctx.verifyingContract),
+    types: RECEIPT_TYPES,
+    primaryType: 'Receipt',
+    message: r,
+  })
 }
 
 const RESPONSE_ABI = [
