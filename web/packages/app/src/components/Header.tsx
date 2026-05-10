@@ -11,7 +11,8 @@ export function Header() {
         <h1 className='text-xl font-bold'>{SITE_EMOJI}</h1>
       </LinkComponent>
 
-      <div className='flex gap-2'>
+      <div className='flex gap-2 items-center'>
+        <LinkComponent href='/admin' className='text-sm hover:underline'>Admin</LinkComponent>
         <Connect />
         <NotificationsDrawer />
       </div>

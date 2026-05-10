@@ -1,278 +1,436 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "forge-std/Test.sol";
-import "../src/BordelResolver.sol";
+import {Test} from "forge-std/Test.sol";
+import {BordelResolver} from "../src/BordelResolver.sol";
+import {IBordelResolver} from "../src/interfaces/IBordelResolver.sol";
+import {INameWrapper} from "../src/interfaces/INameWrapper.sol";
+import {EIP712Receipt} from "../src/lib/EIP712Domain.sol";
+import {MockENS} from "./mocks/MockENS.sol";
+import {MockNameWrapper} from "./mocks/MockNameWrapper.sol";
 
 contract BordelResolverTest is Test {
-    BordelResolver resolver;
-    bytes32 constant BORDEL_NODE = keccak256(abi.encodePacked(bytes32(0), keccak256("bordel-test")));
-    address admin = address(0xA11CE);
+    BordelResolver internal resolver;
+    MockENS internal ens;
+    MockNameWrapper internal nameWrapper;
+    bytes32 internal constant BORDEL_NODE = keccak256("bordel.eth.test.node");
+    address internal owner = address(0xB0DE1);
+    address internal stranger = address(0xDEAD);
+
+    event TextChanged(bytes32 indexed node, string indexed indexedKey, string key, string value);
+    event AddrChanged(bytes32 indexed node, address newAddress);
 
     function setUp() public {
-        vm.prank(admin);
-        resolver = new BordelResolver(BORDEL_NODE);
+        ens = new MockENS();
+        nameWrapper = new MockNameWrapper();
+        ens.setOwner(BORDEL_NODE, owner);
+        resolver = new BordelResolver(ens, nameWrapper, BORDEL_NODE);
     }
 
-    function test_setText_admin_only() public {
-        vm.prank(admin);
-        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x01");
-        assertEq(resolver.text(BORDEL_NODE, "bordel.member-root"), "0x01");
+    function test_setText_byOwner_updatesValue() public {
+        vm.prank(owner);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x1234");
+        assertEq(resolver.text(BORDEL_NODE, "bordel.member-root"), "0x1234");
     }
 
-    function test_setText_non_admin_reverts() public {
-        vm.prank(address(0xBEEF));
-        vm.expectRevert(BordelResolver.NotAdmin.selector);
-        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x01");
+    function test_setText_byStranger_reverts() public {
+        vm.prank(stranger);
+        vm.expectRevert(IBordelResolver.NotAuthorized.selector);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x1234");
     }
 
-    function test_root_helper_reads_text_record() public {
-        vm.startPrank(admin);
-        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x1234567890123456789012345678901234567890123456789012345678901234");
-        vm.stopPrank();
-        assertEq(resolver.exposedRoot(), bytes32(0x1234567890123456789012345678901234567890123456789012345678901234));
+    function test_setText_emitsEvent() public {
+        vm.prank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit TextChanged(BORDEL_NODE, "bordel.member-root", "bordel.member-root", "0xabcd");
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0xabcd");
     }
 
-    function test_signer_helper() public {
-        vm.startPrank(admin);
-        resolver.setText(BORDEL_NODE, "bordel.gateway-signer", "0x000000000000000000000000000000000000abcd");
-        vm.stopPrank();
-        assertEq(resolver.exposedSigner(), address(0xABCD));
+    function test_text_unsetReturnsEmpty() public view {
+        assertEq(resolver.text(BORDEL_NODE, "nonexistent"), "");
     }
 
-    function test_freshness_helper() public {
-        vm.startPrank(admin);
-        resolver.setText(BORDEL_NODE, "bordel.freshness-window", "30");
-        vm.stopPrank();
-        assertEq(resolver.exposedFreshness(), 30);
+    function test_setAddr_byOwner() public {
+        vm.prank(owner);
+        resolver.setAddr(BORDEL_NODE, address(0xABCD));
+        assertEq(resolver.addr(BORDEL_NODE), address(0xABCD));
     }
 
-    function test_missing_param_reverts() public {
-        vm.expectRevert(BordelResolver.MissingParameter.selector);
-        resolver.exposedRoot();
+    function test_setAddr_byStranger_reverts() public {
+        vm.prank(stranger);
+        vm.expectRevert(IBordelResolver.NotAuthorized.selector);
+        resolver.setAddr(BORDEL_NODE, address(0xABCD));
     }
 
-    function test_addr_for_parent_reads_text_record() public {
-        vm.startPrank(admin);
-        resolver.setText(BORDEL_NODE, "addr", "0x000000000000000000000000000000000000beef");
-        vm.stopPrank();
-        assertEq(resolver.addr(BORDEL_NODE), address(0xBEEF));
+    function test_setAddr_emitsEvent() public {
+        vm.prank(owner);
+        vm.expectEmit(true, true, true, true);
+        emit AddrChanged(BORDEL_NODE, address(0xABCD));
+        resolver.setAddr(BORDEL_NODE, address(0xABCD));
     }
 
-    function test_resolve_parent_addr_returns_text() public {
-        vm.startPrank(admin);
-        resolver.setText(BORDEL_NODE, "addr", "0x000000000000000000000000000000000000beef");
-        vm.stopPrank();
-        bytes memory data = abi.encodeWithSelector(0x3b3b57de, BORDEL_NODE);
-        bytes memory dnsName = _dnsEncode("bordel-test");
-        bytes memory result = resolver.resolve(dnsName, data);
+    function test_addr_unsetReturnsZero() public view {
+        assertEq(resolver.addr(BORDEL_NODE), address(0));
+    }
+
+    // ── Hex parser helpers ────────────────────────────────────────────────
+
+    function _setRoot(bytes32 root) internal {
+        vm.prank(owner);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", _toHex32(root));
+    }
+
+    function _setSigner(address signer) internal {
+        vm.prank(owner);
+        resolver.setText(BORDEL_NODE, "bordel.gateway-signer", _toHex20(signer));
+    }
+
+    function _setFreshness(string memory s) internal {
+        vm.prank(owner);
+        resolver.setText(BORDEL_NODE, "bordel.freshness-window", s);
+    }
+
+    function _setUrl(string memory url) internal {
+        vm.prank(owner);
+        resolver.setText(BORDEL_NODE, "bordel.gateway-url", url);
+    }
+
+    function _toHex32(bytes32 v) internal pure returns (string memory) {
+        bytes16 hexChars = "0123456789abcdef";
+        bytes memory s = new bytes(66);
+        s[0] = "0"; s[1] = "x";
+        for (uint256 i = 0; i < 32; i++) {
+            uint8 b = uint8(v[i]);
+            s[2 + i*2] = hexChars[b >> 4];
+            s[3 + i*2] = hexChars[b & 0x0f];
+        }
+        return string(s);
+    }
+
+    function _toHex20(address a) internal pure returns (string memory) {
+        bytes16 hexChars = "0123456789abcdef";
+        bytes memory s = new bytes(42);
+        s[0] = "0"; s[1] = "x";
+        bytes20 v = bytes20(a);
+        for (uint256 i = 0; i < 20; i++) {
+            uint8 b = uint8(v[i]);
+            s[2 + i*2] = hexChars[b >> 4];
+            s[3 + i*2] = hexChars[b & 0x0f];
+        }
+        return string(s);
+    }
+
+    // ── memberRoot tests ──────────────────────────────────────────────────
+
+    function test_memberRoot_unset_reverts() public {
+        vm.expectRevert(abi.encodeWithSelector(IBordelResolver.ParameterMissing.selector, "member-root"));
+        resolver.memberRoot();
+    }
+
+    function test_memberRoot_set_returnsParsedValue() public {
+        bytes32 r = bytes32(uint256(0x1122334455667788990011223344556677889900112233445566778899001122));
+        _setRoot(r);
+        assertEq(resolver.memberRoot(), r);
+    }
+
+    // ── gatewaySigner tests ───────────────────────────────────────────────
+
+    function test_gatewaySigner_unset_reverts() public {
+        vm.expectRevert(abi.encodeWithSelector(IBordelResolver.ParameterMissing.selector, "gateway-signer"));
+        resolver.gatewaySigner();
+    }
+
+    function test_gatewaySigner_set_returnsParsedValue() public {
+        address s = address(0xCAFe0000000000000000000000000000DEADBeEF);
+        _setSigner(s);
+        assertEq(resolver.gatewaySigner(), s);
+    }
+
+    // ── freshnessWindow tests ─────────────────────────────────────────────
+
+    function test_freshness_unset_returnsDefault30() public view {
+        assertEq(resolver.freshnessWindow(), 30);
+    }
+
+    function test_freshness_set_parses() public {
+        _setFreshness("100");
+        assertEq(resolver.freshnessWindow(), 100);
+    }
+
+    function test_freshness_capsAt256() public {
+        _setFreshness("9999");
+        assertEq(resolver.freshnessWindow(), 256);
+    }
+
+    // ── malformed input tests ─────────────────────────────────────────────
+
+    function test_memberRoot_malformed_reverts() public {
+        vm.prank(owner);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "not-hex");
+        vm.expectRevert(abi.encodeWithSelector(IBordelResolver.MalformedHex.selector, "member-root"));
+        resolver.memberRoot();
+    }
+
+    // ── gatewayUrl tests ──────────────────────────────────────────────────
+
+    function test_gatewayUrl_emptyByDefault() public view {
+        assertEq(resolver.gatewayUrl(), "");
+    }
+
+    function test_gatewayUrl_setAndGet() public {
+        _setUrl("https://gateway.example/lookup");
+        assertEq(resolver.gatewayUrl(), "https://gateway.example/lookup");
+    }
+
+    // ── resolve() tests ───────────────────────────────────────────────────
+
+    bytes4 internal constant ADDR_SEL = bytes4(keccak256("addr(bytes32)"));
+    bytes4 internal constant TEXT_SEL = bytes4(keccak256("text(bytes32,string)"));
+
+    function _dnsEncode(string memory) internal pure returns (bytes memory) {
+        // Test does not assert structure of `name`; resolver derives node from data.
+        return hex"";
+    }
+
+    function test_resolve_parent_addr_returnsDirectValue() public {
+        vm.prank(owner);
+        resolver.setAddr(BORDEL_NODE, address(0xBEEF));
+        bytes memory data = abi.encodeWithSelector(ADDR_SEL, BORDEL_NODE);
+        bytes memory result = resolver.resolve(_dnsEncode("bordel.eth"), data);
         assertEq(abi.decode(result, (address)), address(0xBEEF));
     }
 
-    function test_resolve_subname_reverts_with_offchain_lookup() public {
-        vm.prank(admin);
-        resolver.setText(BORDEL_NODE, "bordel.gateway-url", "https://example/api");
-        bytes32 subnode = keccak256(abi.encodePacked(BORDEL_NODE, keccak256("skas")));
-        bytes memory data = abi.encodeWithSelector(0x3b3b57de, subnode);
-        bytes memory dnsName = _dnsEncodeMulti("skas", "bordel-test");
-
-        // OffchainLookup error data is complex (ABI-encoded); just assert it reverts.
-        vm.expectRevert();
-        resolver.resolve(dnsName, data);
+    function test_resolve_unsupportedSelector_reverts() public {
+        bytes memory data = abi.encodeWithSelector(TEXT_SEL, BORDEL_NODE, "bordel.tier");
+        vm.expectRevert(abi.encodeWithSelector(IBordelResolver.UnsupportedSelector.selector, TEXT_SEL));
+        resolver.resolve(_dnsEncode("door.skas.bordel.eth"), data);
     }
 
-    function test_resolve_subname_without_gateway_url_reverts_missing_param() public {
-        bytes32 subnode = keccak256(abi.encodePacked(BORDEL_NODE, keccak256("skas")));
-        bytes memory data = abi.encodeWithSelector(0x3b3b57de, subnode);
-        bytes memory dnsName = _dnsEncodeMulti("skas", "bordel-test");
-        vm.expectRevert(BordelResolver.MissingParameter.selector);
-        resolver.resolve(dnsName, data);
+    bytes32 internal constant SUBNAME_NODE = keccak256("door.skas.bordel.eth.test.node");
+
+    function test_resolve_subname_revertsOffchainLookup() public {
+        _setUrl("https://gateway.example/lookup");
+        bytes memory data = abi.encodeWithSelector(ADDR_SEL, SUBNAME_NODE);
+
+        string[] memory expectedUrls = new string[](1);
+        expectedUrls[0] = "https://gateway.example/lookup";
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IBordelResolver.OffchainLookup.selector,
+                address(resolver),
+                expectedUrls,
+                data,
+                BordelResolver.resolveWithProof.selector,
+                abi.encode(SUBNAME_NODE)
+            )
+        );
+        resolver.resolve(_dnsEncode("door.skas.bordel.eth"), data);
     }
 
-    function test_setText_gateway_url_persists() public {
-        vm.prank(admin);
-        resolver.setText(BORDEL_NODE, "bordel.gateway-url", "https://gateway.example/api/gateway/lookup");
-        assertEq(resolver.text(BORDEL_NODE, "bordel.gateway-url"), "https://gateway.example/api/gateway/lookup");
+    function test_resolve_subname_noUrl_revertsNoGatewayConfigured() public {
+        bytes memory data = abi.encodeWithSelector(ADDR_SEL, SUBNAME_NODE);
+        vm.expectRevert(IBordelResolver.NoGatewayConfigured.selector);
+        resolver.resolve(_dnsEncode("door.skas.bordel.eth"), data);
     }
 
-    // --- resolveWithProof tests ---
+    // ── resolveWithProof() tests ──────────────────────────────────────────
 
-    uint256 constant SIGNER_PK = 0xA11CE000000000000000000000000000000000000000000000000000000000A1;
-    address signerAddr;
+    uint256 internal signerKey = 0xA11CE;
+    address internal signerAddr;
 
-    function _setupGatewayParams(bytes32 root) internal {
-        signerAddr = vm.addr(SIGNER_PK);
-        vm.startPrank(admin);
-        resolver.setText(BORDEL_NODE, "bordel.member-root", _bytes32ToHexString(root));
-        resolver.setText(BORDEL_NODE, "bordel.gateway-signer", _addrToHexString(signerAddr));
-        resolver.setText(BORDEL_NODE, "bordel.freshness-window", "30");
-        resolver.setText(BORDEL_NODE, "bordel.gateway-url", "https://example/api");
-        vm.stopPrank();
+    function _installSigner() internal {
+        signerAddr = vm.addr(signerKey);
+        _setSigner(signerAddr);
     }
 
-    function _digest(
-        address vc, bytes32 node, bytes memory value, bytes32 signedRoot, uint64 blockNum, bytes32 bh
-    ) internal view returns (bytes32) {
-        bytes32 ds = keccak256(abi.encode(
-            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-            keccak256("BordelGateway"),
-            keccak256("1"),
-            block.chainid,
-            vc
-        ));
-        bytes32 sh = keccak256(abi.encode(
-            keccak256("Receipt(bytes32 node,bytes value,bytes32 signedRoot,uint64 blockNum,bytes32 blockHash)"),
-            node, keccak256(value), signedRoot, blockNum, bh
-        ));
-        return keccak256(abi.encodePacked("\x19\x01", ds, sh));
+    function _signReceipt(IBordelResolver.Receipt memory r) internal view returns (bytes memory) {
+        bytes32 digest = EIP712Receipt.digest(
+            address(resolver),
+            r.node,
+            r.value,
+            r.signedRoot,
+            r.blockNum,
+            r.blockHash
+        );
+        (uint8 v, bytes32 sigR, bytes32 sigS) = vm.sign(signerKey, digest);
+        return abi.encodePacked(sigR, sigS, v);
     }
 
-    function _signReceipt(
-        bytes32 node, bytes memory value, bytes32 signedRoot, uint64 blockNum, bytes32 bh
-    ) internal view returns (bytes memory) {
-        bytes32 d = _digest(address(resolver), node, value, signedRoot, blockNum, bh);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(SIGNER_PK, d);
-        return abi.encodePacked(r, s, v);
+    function _validReceipt(bytes32 node, address value) internal view returns (IBordelResolver.Receipt memory) {
+        return IBordelResolver.Receipt({
+            node: node,
+            value: abi.encode(value),
+            signedRoot: resolver.memberRoot(),
+            blockNum: uint64(block.number - 1),
+            blockHash: blockhash(block.number - 1)
+        });
     }
 
-    function _buildResponse(
-        bytes32 node, bytes memory value, bytes32 signedRoot, uint64 blockNum, bytes32 bh
-    ) internal view returns (bytes memory) {
-        bytes memory sig = _signReceipt(node, value, signedRoot, blockNum, bh);
-        bytes memory receipt = abi.encode(node, value, signedRoot, blockNum, bh);
-        return abi.encode(receipt, sig);
+    function _seedRootAndSigner() internal {
+        _setRoot(bytes32(uint256(0xC0FFEE)));
+        _installSigner();
     }
 
-    function test_resolveWithProof_happy_path() public {
-        vm.roll(1000);
-        bytes32 root = bytes32(uint256(0x1007));
-        _setupGatewayParams(root);
-        bytes32 node = keccak256("door.skas");
-        bytes memory value = abi.encode(address(0xCAFE));
-        uint64 blockNum = uint64(block.number - 1);
-        bytes32 bh = blockhash(blockNum);
-
-        bytes memory response = _buildResponse(node, value, root, blockNum, bh);
-        bytes memory result = resolver.resolveWithProof(response, abi.encode(node, ""));
-        assertEq(abi.decode(result, (address)), address(0xCAFE));
+    function test_resolveWithProof_happyPath_returnsValue() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        bytes memory result = resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
+        assertEq(abi.decode(result, (address)), address(0xBEEF));
     }
 
-    function test_resolveWithProof_stale_root_reverts() public {
-        vm.roll(1000);
-        bytes32 root = bytes32(uint256(0x2007));
-        _setupGatewayParams(root);
-        bytes32 node = keccak256("door.skas");
-        bytes memory value = abi.encode(address(0xCAFE));
-        uint64 blockNum = uint64(block.number - 1);
-        bytes32 bh = blockhash(blockNum);
-        bytes32 OLD_ROOT = bytes32(uint256(0xDEAD7007));
-
-        bytes memory response = _buildResponse(node, value, OLD_ROOT, blockNum, bh);
-        vm.expectRevert(BordelResolver.StaleRoot.selector);
-        resolver.resolveWithProof(response, abi.encode(node, ""));
+    function test_resolveWithProof_badSig_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        // Flip a byte
+        sig[0] = bytes1(uint8(sig[0]) ^ 0x01);
+        bytes memory response = abi.encode(r, sig);
+        vm.expectRevert(IBordelResolver.BadSignature.selector);
+        resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
     }
 
-    function test_resolveWithProof_stale_block_reverts() public {
-        vm.roll(1000);
-        bytes32 root = bytes32(uint256(0x3007));
-        _setupGatewayParams(root);
-        bytes32 node = keccak256("door.skas");
-        bytes memory value = abi.encode(address(0xCAFE));
-        uint64 oldBlock = 100;  // 900 blocks old, well beyond 30-block window
-        bytes32 bh = blockhash(oldBlock);
-
-        bytes memory response = _buildResponse(node, value, root, oldBlock, bh);
-        vm.expectRevert(BordelResolver.StaleBlock.selector);
-        resolver.resolveWithProof(response, abi.encode(node, ""));
+    function test_resolveWithProof_nodeMismatch_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        bytes32 differentNode = keccak256("other.bordel.eth.test");
+        vm.expectRevert(IBordelResolver.NodeMismatch.selector);
+        resolver.resolveWithProof(response, abi.encode(differentNode));
     }
 
-    function test_resolveWithProof_wrong_signer_reverts() public {
-        vm.roll(1000);
-        bytes32 root = bytes32(uint256(0x4007));
-        _setupGatewayParams(root);
-        bytes32 node = keccak256("door.skas");
-        bytes memory value = abi.encode(address(0xCAFE));
-        uint64 blockNum = uint64(block.number - 1);
-        bytes32 bh = blockhash(blockNum);
-
-        bytes32 d = _digest(address(resolver), node, value, root, blockNum, bh);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xBEEF, d);
-        bytes memory sig = abi.encodePacked(r, s, v);
-        bytes memory receipt = abi.encode(node, value, root, blockNum, bh);
-        bytes memory response = abi.encode(receipt, sig);
-
-        vm.expectRevert(BordelResolver.InvalidSignature.selector);
-        resolver.resolveWithProof(response, abi.encode(node, ""));
+    function test_resolveWithProof_staleRoot_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        // Rotate root after signing
+        _setRoot(bytes32(uint256(0xC0FFEE + 1)));
+        vm.expectRevert(IBordelResolver.StaleRoot.selector);
+        resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
     }
 
-    function test_resolveWithProof_node_mismatch_reverts() public {
-        vm.roll(1000);
-        bytes32 root = bytes32(uint256(0x5007));
-        _setupGatewayParams(root);
-        bytes32 node = keccak256("door.skas");
-        bytes32 otherNode = keccak256("gym.skas");
-        bytes memory value = abi.encode(address(0xCAFE));
-        uint64 blockNum = uint64(block.number - 1);
-        bytes32 bh = blockhash(blockNum);
-
-        bytes memory response = _buildResponse(node, value, root, blockNum, bh);
-        vm.expectRevert(BordelResolver.NodeMismatch.selector);
-        resolver.resolveWithProof(response, abi.encode(otherNode, ""));
+    function test_resolveWithProof_staleBlock_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        // Roll past freshness window (default 30)
+        vm.roll(200);
+        vm.expectRevert(IBordelResolver.StaleBlock.selector);
+        resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
     }
 
-    function test_resolveWithProof_blockhash_mismatch_reverts() public {
-        vm.roll(1000);
-        bytes32 root = bytes32(uint256(0x6007));
-        _setupGatewayParams(root);
-        bytes32 node = keccak256("door.skas");
-        bytes memory value = abi.encode(address(0xCAFE));
-        uint64 blockNum = uint64(block.number - 1);
-        bytes32 wrongBh = bytes32(uint256(0xDEADBEEF));
-
-        bytes memory response = _buildResponse(node, value, root, blockNum, wrongBh);
-        vm.expectRevert(BordelResolver.BlockHashMismatch.selector);
-        resolver.resolveWithProof(response, abi.encode(node, ""));
+    function test_resolveWithProof_blockhashMismatch_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        r.blockHash = bytes32(uint256(0xDEADBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        vm.expectRevert(IBordelResolver.ReorgedBlock.selector);
+        resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
     }
 
-    // --- helpers for hex conversion ---
-
-    function _bytes32ToHexString(bytes32 b) internal pure returns (string memory) {
-        bytes memory out = new bytes(66);
-        out[0] = "0"; out[1] = "x";
-        for (uint i = 0; i < 32; i++) {
-            uint8 hi = uint8(b[i]) >> 4;
-            uint8 lo = uint8(b[i]) & 0xf;
-            out[2 + i*2]     = hi < 10 ? bytes1(uint8(0x30) + hi) : bytes1(uint8(0x61) + hi - 10);
-            out[2 + i*2 + 1] = lo < 10 ? bytes1(uint8(0x30) + lo) : bytes1(uint8(0x61) + lo - 10);
-        }
-        return string(out);
+    function test_resolveWithProof_signerRotated_reverts() public {
+        _seedRootAndSigner();
+        vm.roll(100);
+        IBordelResolver.Receipt memory r = _validReceipt(SUBNAME_NODE, address(0xBEEF));
+        bytes memory sig = _signReceipt(r);
+        bytes memory response = abi.encode(r, sig);
+        _setSigner(address(0xFACE));
+        vm.expectRevert(IBordelResolver.BadSignature.selector);
+        resolver.resolveWithProof(response, abi.encode(SUBNAME_NODE));
     }
 
-    function _addrToHexString(address a) internal pure returns (string memory) {
-        return _bytes32ToHexString(bytes32(uint256(uint160(a))));
+    function test_supportsInterface_addr() public view {
+        assertTrue(resolver.supportsInterface(bytes4(keccak256("addr(bytes32)"))));
     }
 
-    // --- DNS encoding helpers used by the resolve tests ---
-
-    function _dnsEncode(string memory label) internal pure returns (bytes memory) {
-        bytes memory l = bytes(label);
-        bytes memory out = new bytes(1 + l.length + 1);
-        out[0] = bytes1(uint8(l.length));
-        for (uint256 i = 0; i < l.length; i++) out[1 + i] = l[i];
-        out[out.length - 1] = 0x00;
-        return out;
+    function test_supportsInterface_text() public view {
+        assertTrue(resolver.supportsInterface(bytes4(keccak256("text(bytes32,string)"))));
     }
 
-    function _dnsEncodeMulti(string memory sub, string memory parent) internal pure returns (bytes memory) {
-        bytes memory s = bytes(sub);
-        bytes memory p = bytes(parent);
-        bytes memory out = new bytes(1 + s.length + 1 + p.length + 1);
-        uint256 o = 0;
-        out[o++] = bytes1(uint8(s.length));
-        for (uint256 i = 0; i < s.length; i++) out[o++] = s[i];
-        out[o++] = bytes1(uint8(p.length));
-        for (uint256 i = 0; i < p.length; i++) out[o++] = p[i];
-        out[o] = 0x00;
-        return out;
+    function test_supportsInterface_resolve() public view {
+        assertTrue(resolver.supportsInterface(bytes4(keccak256("resolve(bytes,bytes)"))));
+    }
+
+    function test_supportsInterface_erc165() public view {
+        assertTrue(resolver.supportsInterface(0x01ffc9a7));
+    }
+
+    function test_supportsInterface_unknown_false() public view {
+        assertFalse(resolver.supportsInterface(0xffffffff));
+    }
+
+    // ── NameWrapper / operator auth tests ─────────────────────────────────
+
+    address internal wrappedOwner = address(0xCAFE);
+    address internal operator = address(0xACCE5);
+
+    function test_setText_wrappedOwner_canWrite() public {
+        ens.setOwner(BORDEL_NODE, address(nameWrapper));
+        nameWrapper.setOwner(uint256(BORDEL_NODE), wrappedOwner);
+
+        vm.prank(wrappedOwner);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x1234");
+        assertEq(resolver.text(BORDEL_NODE, "bordel.member-root"), "0x1234");
+    }
+
+    function test_setText_wrappedNonOwner_reverts() public {
+        ens.setOwner(BORDEL_NODE, address(nameWrapper));
+        nameWrapper.setOwner(uint256(BORDEL_NODE), wrappedOwner);
+
+        vm.prank(stranger);
+        vm.expectRevert(IBordelResolver.NotAuthorized.selector);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x1234");
+    }
+
+    function test_setText_ensOperator_canWrite() public {
+        vm.prank(owner);
+        ens.setApprovalForAll(operator, true);
+
+        vm.prank(operator);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0x1234");
+        assertEq(resolver.text(BORDEL_NODE, "bordel.member-root"), "0x1234");
+    }
+
+    function test_setText_nameWrapperOperator_canWrite() public {
+        ens.setOwner(BORDEL_NODE, address(nameWrapper));
+        nameWrapper.setOwner(uint256(BORDEL_NODE), wrappedOwner);
+
+        vm.prank(wrappedOwner);
+        nameWrapper.setApprovalForAll(operator, true);
+
+        vm.prank(operator);
+        resolver.setText(BORDEL_NODE, "bordel.member-root", "0xabcd");
+        assertEq(resolver.text(BORDEL_NODE, "bordel.member-root"), "0xabcd");
+    }
+
+    function test_setAddr_wrappedOwner_canWrite() public {
+        ens.setOwner(BORDEL_NODE, address(nameWrapper));
+        nameWrapper.setOwner(uint256(BORDEL_NODE), wrappedOwner);
+
+        vm.prank(wrappedOwner);
+        resolver.setAddr(BORDEL_NODE, address(0xBEEF));
+        assertEq(resolver.addr(BORDEL_NODE), address(0xBEEF));
+    }
+
+    function test_constructor_zeroNameWrapper_legacyPathStillWorks() public {
+        MockENS legacyEns = new MockENS();
+        legacyEns.setOwner(BORDEL_NODE, owner);
+        BordelResolver legacy = new BordelResolver(legacyEns, INameWrapper(address(0)), BORDEL_NODE);
+
+        vm.prank(owner);
+        legacy.setText(BORDEL_NODE, "bordel.member-root", "0xfeed");
+        assertEq(legacy.text(BORDEL_NODE, "bordel.member-root"), "0xfeed");
     }
 }

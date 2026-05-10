@@ -1,16 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "forge-std/Script.sol";
-import "../src/BordelResolver.sol";
+import {Script, console} from "forge-std/Script.sol";
+import {BordelResolver} from "../src/BordelResolver.sol";
+import {IENS} from "../src/interfaces/IENS.sol";
+import {INameWrapper} from "../src/interfaces/INameWrapper.sol";
 
 contract DeployBordelResolver is Script {
     function run() external {
-        bytes32 parentNode = vm.envBytes32("BORDEL_PARENT_NODE");
-        uint256 pk = vm.envUint("DEPLOYER_PK");
-        vm.startBroadcast(pk);
-        BordelResolver resolver = new BordelResolver(parentNode);
+        address ensAddr = vm.envAddress("ENS_REGISTRY");
+        address nameWrapperAddr = vm.envOr("NAME_WRAPPER", address(0));
+        bytes32 bordelNode = vm.envBytes32("BORDEL_NODE");
+
+        vm.startBroadcast();
+        BordelResolver resolver = new BordelResolver(
+            IENS(ensAddr),
+            INameWrapper(nameWrapperAddr),
+            bordelNode
+        );
         vm.stopBroadcast();
-        console2.log("BordelResolver deployed at:", address(resolver));
+
+        console.log("BordelResolver deployed at:", address(resolver));
     }
 }
