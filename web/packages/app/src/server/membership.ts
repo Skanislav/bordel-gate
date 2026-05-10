@@ -40,7 +40,7 @@ export const ENROLLMENT_FUTURE_SKEW_SEC = 60
 // unless both are allowlisted here. Override via env in deployment.
 const ALLOWED_CHAIN_IDS: number[] = (() => {
   const raw = process.env.MEMBERSHIP_CHAIN_IDS
-  if (!raw) return [1]
+  if (!raw) return [11155111]
   return raw
     .split(',')
     .map((s) => Number.parseInt(s.trim(), 10))
@@ -75,8 +75,8 @@ export type Member = {
 export type MembersDb = {
   version: 1
   tree_depth: typeof TREE_DEPTH
-  leaf_hash: 'keccak256(pub_key_x || pub_key_y)'
-  node_hash: 'keccak256(left || right)'
+  leaf_hash: 'poseidon2([x_high, x_low, y_high, y_low])'
+  node_hash: 'poseidon2([left, right])'
   members: Member[]
   root: Hex
 }
@@ -101,14 +101,14 @@ export class MembershipError extends Error {
   }
 }
 
-function emptyDb(): MembersDb {
+async function emptyDb(): Promise<MembersDb> {
   return {
     version: 1,
     tree_depth: TREE_DEPTH,
-    leaf_hash: 'keccak256(pub_key_x || pub_key_y)',
-    node_hash: 'keccak256(left || right)',
+    leaf_hash: 'poseidon2([x_high, x_low, y_high, y_low])',
+    node_hash: 'poseidon2([left, right])',
     members: [],
-    root: rootOfEmptyTree(),
+    root: await rootOfEmptyTree(),
   }
 }
 
@@ -116,8 +116,17 @@ export async function loadDb(): Promise<MembersDb> {
   try {
     const raw = await readFile(DB_PATH, 'utf8')
     const parsed = JSON.parse(raw) as MembersDb
-    // Always recompute root from members so a hand-edited file can't lie.
-    parsed.root = computeRoot(parsed.members.map((m) => m.leaf))
+    // Re-derive every leaf from the pubkey so an older members.json (e.g.
+    // from the keccak-leaf era) silently migrates on first read. The leaf is
+    // a pure function of pubkey_x/y, so the persisted value is never trusted.
+    for (const m of parsed.members) {
+      m.leaf = await leafFromPubkey(m.pubkey_x, m.pubkey_y)
+    }
+    // Always recompute root + metadata from members so a hand-edited file
+    // can't lie.
+    parsed.leaf_hash = 'poseidon2([x_high, x_low, y_high, y_low])'
+    parsed.node_hash = 'poseidon2([left, right])'
+    parsed.root = await computeRoot(parsed.members.map((m) => m.leaf))
     return parsed
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return emptyDb()
@@ -157,7 +166,7 @@ export async function enrollMember(input: EnrollInput): Promise<{ db: MembersDb;
     throw new MembershipError(409, `tree full (depth ${TREE_DEPTH})`)
   }
 
-  const leaf = leafFromPubkey(pkx, pky)
+  const leaf = await leafFromPubkey(pkx, pky)
   const member: Member = {
     name,
     pubkey_x: pkx,
@@ -170,9 +179,30 @@ export async function enrollMember(input: EnrollInput): Promise<{ db: MembersDb;
     tier: (input.tier ?? 'member').trim().toLowerCase() || 'member',
   }
   db.members.push(member)
-  db.root = computeRoot(db.members.map((m) => m.leaf))
+  db.root = await computeRoot(db.members.map((m) => m.leaf))
   await saveDb(db)
   return { db, member }
+}
+
+// Removes the member at `index` and compacts the remaining members' leaf_index
+// values so the tree stays gap-free (the prove-signature client expects
+// consecutive indices to reconstruct the merkle path). This invalidates any
+// previously-downloaded card for a member with index > `index`.
+export async function removeMember(index: number): Promise<{ db: MembersDb; removed: Member }> {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new MembershipError(400, `index must be a non-negative integer; got ${index}`)
+  }
+  const db = await loadDb()
+  if (index >= db.members.length) {
+    throw new MembershipError(404, `no member at index ${index}`)
+  }
+  const [removed] = db.members.splice(index, 1)
+  for (let i = index; i < db.members.length; i++) {
+    db.members[i].leaf_index = i
+  }
+  db.root = await computeRoot(db.members.map((m) => m.leaf))
+  await saveDb(db)
+  return { db, removed }
 }
 
 export type EnrollFromSignatureInput = {
@@ -289,7 +319,7 @@ export async function cardForIndex(index: number): Promise<MemberCard> {
   let path: Hex[]
   let indices: boolean[]
   try {
-    ;({ path, indices } = merklePathFor(db.members.map((m) => m.leaf), index))
+    ;({ path, indices } = await merklePathFor(db.members.map((m) => m.leaf), index))
   } catch (err) {
     throw new MembershipError(400, err instanceof Error ? err.message : String(err))
   }

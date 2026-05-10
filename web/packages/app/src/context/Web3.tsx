@@ -11,7 +11,7 @@ import {
 } from '@/utils/web3'
 import { SITE_NAME, SITE_INFO, SITE_URL } from '@/utils/site'
 import { ETH_CHAINS } from '@/utils/network'
-import { mainnet } from '@reown/appkit/networks'
+import { sepolia } from '@reown/appkit/networks'
 
 interface Props extends PropsWithChildren {
   cookies: string | null
@@ -40,8 +40,8 @@ if (!WALLETCONNECT_DISABLED && WALLETCONNECT_ADAPTER !== null) {
     createAppKit({
       adapters: [WALLETCONNECT_ADAPTER],
       projectId: WALLETCONNECT_PROJECT_ID,
-      networks: [mainnet, ...ETH_CHAINS],
-      defaultNetwork: mainnet,
+      networks: [sepolia, ...ETH_CHAINS],
+      defaultNetwork: sepolia,
       metadata: metadata,
       features: {
         analytics: false,

@@ -158,7 +158,7 @@ export default function GatePage() {
           }
         }
         const leaves = ordered.map((m) => m.leaf)
-        const localRoot = computeRoot(leaves)
+        const localRoot = await computeRoot(leaves)
         if (localRoot !== db.root) {
           throw new Error(`local root != server root`)
         }
@@ -258,7 +258,7 @@ export default function GatePage() {
       const pkx = pubKeyBytes.slice(1, 33)
       const pky = pubKeyBytes.slice(33, 65)
 
-      const leafHex = leafFromPubkeyBytes(pkx, pky)
+      const leafHex = await leafFromPubkeyBytes(pkx, pky)
       setLastLeaf(leafHex)
 
       const leafIndex = cache.leaves.indexOf(leafHex)
@@ -267,7 +267,7 @@ export default function GatePage() {
           `not enrolled (leaf ${truncate(leafHex)} not in ${cache.members_count}-member tree). enroll at /admin and re-sync.`,
         )
       }
-      const { path, indices } = pathFor(cache.leaves, leafIndex)
+      const { path, indices } = await pathFor(cache.leaves, leafIndex)
       const root = cache.root
       const rs = normalizeLowS(sigBytes.subarray(0, 64))
 
@@ -275,11 +275,11 @@ export default function GatePage() {
         pub_key_x: Array.from(pkx),
         pub_key_y: Array.from(pky),
         signature: Array.from(rs),
-        merkle_path: path.map((p) => Array.from(hexToBytes(p))),
+        merkle_path: path,
         merkle_indices: indices,
         challenge: Array.from(hexToBytes(digest)),
-        root: Array.from(hexToBytes(root)),
-        leaf: Array.from(hexToBytes(leafHex)),
+        root,
+        leaf: leafHex,
       }
 
       setStatus('proving')

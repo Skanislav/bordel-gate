@@ -1,6 +1,6 @@
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import { cookieStorage, createConfig, createStorage, http, injected, type Config } from 'wagmi'
-import { mainnet } from 'wagmi/chains'
+import { sepolia } from 'wagmi/chains'
 import { ETH_CHAINS } from './network'
 
 export const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? ''
@@ -31,14 +31,14 @@ export const WALLETCONNECT_ADAPTER = WALLETCONNECT_DISABLED
 
 // Plain wagmi config used as a fallback when WC is disabled. injected() covers
 // MetaMask / Rabby / Frame / any in-browser wallet without going near the
-// WalletConnect SDK. mainnet is the only transport — adjust if a multi-chain
+// WalletConnect SDK. sepolia is the only transport — adjust if a multi-chain
 // fallback is ever needed.
 const FALLBACK_WAGMI_CONFIG: Config = createConfig({
-  chains: [mainnet],
+  chains: [sepolia],
   ssr: true,
   storage: createStorage({ storage: cookieStorage }),
   connectors: [injected()],
-  transports: { [mainnet.id]: http() },
+  transports: { [sepolia.id]: http() },
 })
 
 export const WAGMI_CONFIG: Config =

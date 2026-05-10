@@ -217,6 +217,21 @@ export default function AdminPage() {
     }
   }
 
+  const removeMember = async (index: number, memberName: string) => {
+    if (!window.confirm(`Remove "${memberName}" (index ${index})? This re-indexes later members and invalidates their cards.`)) {
+      return
+    }
+    try {
+      const res = await fetch(`/api/admin/members/${index}`, { method: 'DELETE' })
+      const body = (await res.json()) as { removed?: Member; error?: string }
+      if (!res.ok) throw new Error(body.error ?? `delete failed (${res.status})`)
+      Add(`Removed ${body.removed?.name}`, { type: 'success' })
+      await refresh()
+    } catch (err) {
+      Add(`Remove failed: ${err instanceof Error ? err.message : String(err)}`, { type: 'error' })
+    }
+  }
+
   const downloadCard = async (index: number, name: string) => {
     try {
       const res = await fetch(`/api/admin/cards/${index}`, { cache: 'no-store' })
@@ -496,6 +511,7 @@ export default function AdminPage() {
                 <th>Tier</th>
                 <th>Capabilities</th>
                 <th>Card</th>
+                <th>Remove</th>
               </tr>
             </thead>
             <tbody>
@@ -514,11 +530,18 @@ export default function AdminPage() {
                       Download
                     </button>
                   </td>
+                  <td>
+                    <button
+                      className='btn btn-xs btn-error'
+                      onClick={() => removeMember(m.leaf_index, m.name)}>
+                      Remove
+                    </button>
+                  </td>
                 </tr>
               ))}
               {db && db.members.length === 0 && (
                 <tr>
-                  <td colSpan={7} className='text-center opacity-60 py-4'>
+                  <td colSpan={8} className='text-center opacity-60 py-4'>
                     No members yet — enroll the first one above.
                   </td>
                 </tr>
