@@ -1,117 +1,71 @@
-# ZK Noir ecrecover
+# ecdsa_validator
 
-This is a simple Noir demo that shows how to use dependencies in a Noir project.
+The Noir circuit behind Bordel Auth. It proves, in zero knowledge, that the prover controls an
+ECDSA secp256k1 key whose commitment is a leaf in a published Merkle tree — without revealing the
+key or which leaf it is.
 
-This circuit verifies a signature without revealing the signing address. 
+## What it proves
 
-## Usage
+```
+PRIVATE
+  pub_key_x      [u8; 32]          secp256k1 public key X
+  pub_key_y      [u8; 32]          secp256k1 public key Y
+  signature      [u8; 64]          r ‖ s over `challenge`, low-s normalized
+  merkle_path    [Field; 16]       sibling hashes
+  merkle_indices [bool; 16]        path direction bits
 
-### 1. Clone this repo
+PUBLIC
+  challenge      [u8; 32]          the 32-byte digest that was signed
+  root           Field            Merkle root of the member set
+  leaf           Field            the prover's leaf
 
-```bash
-git clone ...
+ASSERTIONS  (see src/main.nr)
+  1. verify_signature(pub_key_x, pub_key_y, signature, challenge)
+  2. leaf == poseidon2([x_high, x_low, y_high, y_low])   — each 32-byte coord
+     split into a high-16 / low-16 chunk so it fits in a BN254 Field
+  3. verify_inclusion(leaf, merkle_path, merkle_indices, root)   — src/merkle.nr
 ```
 
-### 2. Create the Prover.toml file
+`TREE_DEPTH` is 16 (up to 65 536 members). Proving system is UltraHonk.
+
+## Layout
+
+| Path | What it is |
+|------|------------|
+| `src/main.nr` | Circuit entrypoint — the three assertions above. |
+| `src/merkle.nr` | Poseidon2 Merkle inclusion verifier. |
+| `Prover.toml` | Witness inputs for `nargo execute`. |
+| `scripts/sync_to_web.mjs` | Copies the compiled circuit into `web/packages/app` and regenerates its TS input type. |
+| `build_sample_tree.mjs` | Builds a sample Merkle tree and writes a matching `Prover.toml`. |
+| `generate_proof.mjs` | Generates and verifies a proof off-chain with `@aztec/bb.js`. |
+
+## Build
+
+Requires [Noir](https://noir-lang.org/) (`nargo`) and `bb` for verifier-contract generation.
 
 ```bash
-nargo check
+nargo compile        # -> target/ecdsa_validator.json
+nargo execute        # compile + generate a witness from Prover.toml
+
+yarn install
+yarn build           # nargo compile && sync the artifact into web/packages/app
+yarn sync            # just sync (after a manual nargo compile)
 ```
 
-Then fill in the inputs in the `Prover.toml` file.
-
-### Generating the inputs
-
-#### Generate the message
+## Generate a proof off-chain
 
 ```bash
-cast keccak "hello"
+node build_sample_tree.mjs    # writes a sample Prover.toml
+nargo execute                 # -> target/ecdsa_validator.gz (witness)
+node generate_proof.mjs       # UltraHonk prove + verify via bb.js
+                              # -> target/bbjs_proof.bin, target/bbjs_public_inputs.json
 ```
 
-#### Sign the message
+## Generate the on-chain verifier
 
 ```bash
-cast wallet sign --no-hash --accpunt <name-of-your-keystore> <bytes-output>
-```
-
-#### Get your public key
-
-```bash
-cast wallet public-key --account <name-of-your-keystore>
-```
-
-The first 32 bytes are the x value and the second 32 bytes are the y value.
-
-### Paste into inputs.txt as bytes
-
-Add the values in the file:
-
-```txt
-expectedAddress = "0x52d64ED1fd0877797e2030fc914259e052F2bD67"
-hashed_message = "0x1c8aff950685c2ed4bc3174f3472287b56d9517b9c948127319a09a7a36deac8"
-pub_key_x = "533367042c3e9456fec155940165c28c01fe6e28601337df50562ddc4f36bfb9"
-pub_key_y = "7dcafe27cadbe10861bb67e0599382f79dc29c1d39d93b10f716c8ceff1743ed"
-signature = "0xdd935f778351217ec02e6f857e47f0cea837380f30eccf63742b9a97cf1872b4316700b028504591f6b31203b86ccb3363353eedd8f9cf4f344a769c689525b31b"
-```
-
-### Populate the Prover.toml
-
-```bash
-chmod +x generate_inputs.sh
-./generate_inputs.sh
-```
-
-### 4. (optional) Compile the circuit
-
-Do this step if you want to create a verifier smart contract without creating a proof (if you want users to create witnesses and proofs later).
-
-```bash
-nargo compile
-```
-
-### 5. Execute the circuit and generate a witness 
-
-This step will also compile the circuit.
-
-```bash
-nargo execute
-```
-
-### 6. Create the proof
-
-```bash
-bb prove -b ./target/circuits.json -w ./target/circuits.gz -o ./target
-```
-
-
-```bash
-bb prove --oracle_hash keccak -b ./target/circuits.json -w ./target/circuits.gz -o ./target
-```
-
-### 7. Create the verification key
-
-#### 7.(a) For off-chain verification
-
-```bash
-bb write_vk -b ./target/circuits.json -o ./target
-```
-
-#### 7.(b) For an on-chain verifier contract
-
-```bash
-bb write_vk --oracle_hash keccak -b ./target/circuits.json -o ./target
-```
-
-### 8. Verification
-
-#### 8.(a) Off-chain verification
-
-```bash
-bb verify -k ./target/vk -p ./target/proof
-```
-
-#### 8.(b) Generate an on-chain verifier contract
-
-```bash
+bb write_vk --oracle_hash keccak -b ./target/ecdsa_validator.json -o ./target
 bb write_solidity_verifier -k ./target/vk -o ./target/Verifier.sol
 ```
+
+The committed Foundry copy of the verifier lives in `bordel-eth-verifier/`.

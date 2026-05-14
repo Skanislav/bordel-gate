@@ -1,0 +1,41 @@
+# Build context for railway is the repo root (Railway default), so this file
+# lives here, not in web/. Excludes everything not needed by web/Dockerfile to
+# keep the upload small and the build cache hits sharp.
+
+# nothing outside web/ is needed by the Dockerfile
+ecdsa_validator
+halo-lib
+bordel-eth-verifier
+docs
+impl.md
+text.md
+package.json
+yarn.lock
+node_modules
+.git
+.github
+.claude
+.worktrees
+
+# inside web/ — drop build/install artefacts
+web/node_modules
+web/**/node_modules
+web/.next
+web/**/.next
+web/certs
+
+# secrets and editor state
+.env
+.env.*
+!.env.sample
+**/.env
+**/.env.*
+!**/.env.sample
+.DS_Store
+**/.DS_Store
+*.log
+**/*.log
+.vercel
+**/.vercel
+.idea
+.vscode
