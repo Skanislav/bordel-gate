@@ -1,6 +1,5 @@
-// Pure merkle math for the depth-16 Poseidon2 member tree. Dual-environment:
-// imported by both src/server/membership.ts (server) and the prove page
-// (client) so the leaf shape, root, and path can never disagree between sides.
+// Pure merkle math for the depth-16 Poseidon2 member tree. Shared by the
+// /commit and /verify pages so the leaf shape, root, and path always agree.
 //
 // Hash function matches ecdsa_validator's in-circuit Poseidon2:
 //   leaf  = poseidon2([x_high, x_low, y_high, y_low])  // 16-byte BE chunks

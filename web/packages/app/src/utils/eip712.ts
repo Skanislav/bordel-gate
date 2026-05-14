@@ -1,7 +1,5 @@
-// Shared EIP-712 typed-data shapes for the membership flows. Imported by both
-// the admin page (client) and src/server/membership.ts (server) so the digest
-// can never drift between sides — if it did, recovery would mismatch and the
-// server would reject the enrollment.
+// Shared EIP-712 typed-data shapes for the membership flows. Used by the
+// /commit page so the enrollment digest is constructed consistently.
 //
 // Dependency budget: viem only. No node:* / no react. Safe in either runtime.
 

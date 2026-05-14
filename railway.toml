@@ -15,24 +15,8 @@
 #                                         this must be set before the deploy
 #                                         that should pick it up.
 #
-# Optional env vars:
-#
-#   MEMBERSHIP_CHAIN_IDS                  CSV of chainIds the server accepts
-#                                         enrollment signatures from. Defaults
-#                                         to "1" (mainnet); use "11155111" for
-#                                         Sepolia, or "1,11155111" for both.
-#   MEMBERSHIP_DB_PATH                    Where members.json lives. Default in
-#                                         the Dockerfile is /app/data/members.json.
-#                                         If you mount a Railway Volume, point
-#                                         this at <volumeMountPath>/members.json.
-#
-# Persistence (recommended for any non-throwaway deploy):
-#
-#   Add a Volume to the service in the Railway UI.
-#     Mount path: /app/data
-#     Size:       1 GiB is plenty (members.json is < 1 MB even at 65k members).
-#   The volume survives deploys; without it, every redeploy starts from an
-#   empty member list.
+# The app is fully client-side: the member tree lives in the browser's
+# localStorage. There is no server-side database and nothing to persist.
 
 [build]
 builder = "DOCKERFILE"

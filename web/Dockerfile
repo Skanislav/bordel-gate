@@ -9,9 +9,7 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 # Install only the manifests first so docker can cache the install layer.
-# Yarn 1 workspaces require all workspace package.json files at install time.
-# packages/foundry/ has no package.json (it's a Foundry/Solidity workspace),
-# so it isn't copied here.
+# packages/app is the only workspace.
 COPY web/package.json web/yarn.lock ./
 COPY web/packages/app/package.json packages/app/package.json
 
@@ -33,7 +31,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/app/node_modules ./packages/app/node_modules
 
 # Copy the rest of web/ (the .dockerignore at repo root prunes node_modules /
-# .next / data etc. so this transfer stays small).
+# .next etc. so this transfer stays small).
 COPY web/ ./
 
 RUN yarn workspace app build
@@ -44,9 +42,6 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-# Default DB path; railway.toml docs recommend mounting a Volume at /app/data
-# so enrollments persist across deploys.
-ENV MEMBERSHIP_DB_PATH=/app/data/members.json
 
 # Run as non-root.
 RUN addgroup --system --gid 1001 nodejs \
@@ -58,10 +53,6 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY --from=builder --chown=nextjs:nodejs /app/packages/app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/packages/app/.next/static ./packages/app/.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/packages/app/public ./packages/app/public
-
-# Pre-create the data dir so the first enrollment write succeeds even if no
-# Railway volume is mounted (demo-without-persistence still works).
-RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
 
 USER nextjs
 
